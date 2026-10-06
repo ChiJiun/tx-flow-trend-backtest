@@ -4,9 +4,10 @@
 
 - GitHub: https://github.com/ChiJiun/tx-flow-trend-backtest
 - Branch: `main`
-- Current commit: `d6f999b` (`Initial commit: TX flow trend backtest`)
-- Working tree was clean before this handoff update.
-- Repository is public. GitHub currently shows 0 open issues, 0 pull requests, no workflow runs, and no `SECURITY.md`.
+- Latest implementation commit before this handoff update: `1737172` (`ci: pin runner and update GitHub actions`); feature commit: `1b4d7ee`.
+- Repository is public.
+- GitHub issue #1 (CI regression) and #2 (volatility-matched benchmark) are closed. Issue #3 (log-y equity curve) remains open only because the tracked local PDF binary is locked by another Windows process and could not be refreshed; source code and CI both generate the updated PDF successfully.
+- GitHub Actions workflow `Backtest regression` passed run `37527148941` on `ubuntu-24.04`, Python 3.12, `actions/checkout@v7`, and `actions/setup-python@v7`.
 
 ## Project purpose
 
@@ -34,15 +35,15 @@ Formal period: 2018-08-31 to 2026-10-05, 1,968 trading days, initial capital NT$
 
 The benchmark's 11.12% MDD is not by itself evidence of a code error. It has materially higher exposure and volatility than the strategy. For fair risk comparison, add a post-hoc volatility-matched benchmark, but retain fixed-one-contract results as the primary executable comparison.
 
-Previous analytical estimate: scaling benchmark P&L to approximately 0.315 TX-equivalent produces annual volatility near 2.82%, CAGR about 2.90%, MDD about 4.25%, and Sharpe about 1.066. This is a diagnostic fractional exposure, not a directly tradable integer TX position; transaction costs must be redefined for any smaller-contract implementation.
+Implemented volatility-matched diagnostic: scaling benchmark gross P&L and all transaction-cost components proportionally to `0.315010` TX-equivalent matches strategy annual volatility at `2.8187%`. Diagnostic CAGR is `2.8995%`, MDD `4.2541%`, Sharpe `1.0657`, and Calmar `0.6816`. This is explicitly labeled full-sample post-hoc and not directly tradable.
 
 ## Important implementation notes
 
-- `backtest.py` contains hard-coded baseline assertions at the end (`net_pnl` and `Sharpe`). They protect the current dataset but intentionally fail after changing parameters or data. Replace with parameterized expected values or a separate regression test before making the workflow reusable.
-- `make_report.py` currently generates linear equity and underwater charts only. It embeds `equity_comparison.png` and `underwater_comparison.png` into the workbook and report.
-- The requested next visual change is an additional `equity_comparison_log.png` with a logarithmic y-axis. Preserve the existing linear chart.
-- `make_report.py` currently states and reports only fixed-one-contract results. If a volatility-matched benchmark is added, label it as a diagnostic comparison and do not mix it into the primary fixed-one-contract table without a clear separate section.
-- `backtest.py` rebuilds the base workbook; `make_report.py` then adds the report-only sheets, images, and Chinese field dictionary.
+- `backtest.py` still contains hard-coded baseline assertions (`net_pnl` and `Sharpe`). They now coexist with `ci_verify.py`; a future cleanup should move expected values into a named/versioned regression fixture so parameter/data changes fail with a clearer expected-update path.
+- `backtest.py` now generates `volatility_matched_benchmark_summary.csv`, `volatility_matched_benchmark_daily.csv`, and regenerates `final_verification.json` each run.
+- `make_report.py` now preserves the linear equity chart, adds `equity_comparison_log.png`, validates that log-y equity inputs are non-empty/finite/strictly positive, and includes the log-y chart in DOCX/XLSX/PDF builds.
+- The report keeps fixed-one-contract Buy-and-Hold as the primary comparison and presents the volatility-matched result in a clearly separate diagnostic section.
+- `backtest.py` rebuilds the base workbook; `make_report.py` then adds report-only sheets/images. Final workbook has 18 sheets.
 
 ## GitHub scan findings and proposed issues
 
@@ -87,11 +88,11 @@ Previous analytical estimate: scaling benchmark P&L to approximately 0.315 TX-eq
 
 ## Recommended order for the next agent
 
-1. Implement the log-y chart and volatility-matched diagnostic in source code.
-2. Regenerate outputs and run visual QA for the PNG, XLSX, DOCX, and PDF.
-3. Add regression/CI scaffolding without weakening current accounting assertions.
-4. Commit and push with a focused message; then open the selected GitHub issues using the issue text above.
+1. Close any application holding `TX_flow_trend_report.pdf`, rerun `python make_report.py`, verify the canonical tracked PDF changed, commit/push that binary refresh, then close GitHub issue #3.
+2. Replace hard-coded baseline assertions with a named/versioned regression fixture while preserving current accounting checks and `ci_verify.py`.
+3. Add an untouched out-of-sample evaluation path without reusing exploratory periods for selection.
+4. Add data/source manifest checks, then address `SECURITY.md`, licensing, and generated-artifact policy.
 
 ## Validation already run
 
-Bundled Python successfully ran `backtest.py` and reproduced the baseline metrics above. No working-tree changes existed before adding this handoff document.
+Validation completed in an isolated copy because the working-directory PDF was locked: `backtest.py` → `make_report.py` → `ci_verify.py` all passed, `pdfinfo` reported 8 pages, and the workbook contained 18 sheets. GitHub Actions independently repeated the full pipeline successfully on Python 3.12. The working-directory DOCX/XLSX/PNG/CSV outputs were refreshed from the validated isolated build; only the tracked canonical PDF binary remains stale until its Windows file lock is released.
