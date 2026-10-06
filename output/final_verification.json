@@ -10,5 +10,13 @@
     "executions": 196,
     "net_pnl": 8268352.664,
     "final_equity": 18268352.664
+  },
+  "volatility_matched_benchmark": {
+    "days": 1968,
+    "position_equivalent": 0.3150096642471062,
+    "annual_volatility": 0.028187176024760077,
+    "target_annual_volatility": 0.02818717602476008,
+    "final_equity": 12604610.996563306,
+    "directly_tradable": false
   }
 }

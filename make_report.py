@@ -19,13 +19,21 @@ from openpyxl.drawing.image import Image as ExcelImage
 
 B=Path(__file__).resolve().parent;O=B/'output';read=lambda name:pd.read_csv(O/(name+'.csv'))
 m=read('metrics_comparison');ms,mb=m.iloc[0],m.iloc[1];s=read('strategy_daily');bh=read('benchmark_daily')
+vm=read('volatility_matched_benchmark_summary').iloc[0];vmd=read('volatility_matched_benchmark_daily')
 tr=read('strategy_trades');annual=read('annual_results');sens=read('cost_sensitivity');ab=read('ablation');splits=read('descriptive_time_splits')
 ev=read('strategy_events');bev=read('benchmark_events');v=json.loads((O/'validation.json').read_text())
-for d in [s,bh]:d['date']=pd.to_datetime(d.date)
+for d in [s,bh,vmd]:d['date']=pd.to_datetime(d.date)
 tr['entry_date']=pd.to_datetime(tr.entry_date);tr['exit_date']=pd.to_datetime(tr.exit_date)
 duration=(tr.exit_date-tr.entry_date).dt.days
 pct=lambda x:f'{x*100:.2f}%';money=lambda x:f'{x:,.2f}';ratio=lambda x:f'{x:.3f}'
 font=FontProperties(fname=str(B/'chinese_font.ttf'));plt.rcParams['axes.unicode_minus']=False
+
+def validate_equity_for_log(*frames):
+    for d in frames:
+        if d.empty:raise ValueError('log equity chart requires non-empty data')
+        equity=pd.to_numeric(d.equity,errors='coerce')
+        if not np.isfinite(equity).all() or (equity<=0).any():raise ValueError('log equity chart requires strictly positive finite equity')
+
 for water in [False,True]:
     fig,ax=plt.subplots(figsize=(9.4,3.75))
     for d,label,col in [(s,'法人交易強度＋價格趨勢','#146f91'),(bh,'Buy-and-Hold（含轉倉成本）','#ce7c2e')]:
@@ -35,6 +43,14 @@ for water in [False,True]:
     if not water:ax.axhline(10,color='gray',ls='--',lw=.8)
     ax.legend(prop=font,frameon=False);ax.grid(alpha=.18);ax.spines[['top','right']].set_visible(False)
     fig.tight_layout();fig.savefig(O/('underwater_comparison.png' if water else 'equity_comparison.png'),dpi=200);plt.close(fig)
+validate_equity_for_log(s,bh)
+fig,ax=plt.subplots(figsize=(9.4,3.75))
+for d,label,col in [(s,'法人交易強度＋價格趨勢','#146f91'),(bh,'Buy-and-Hold（含轉倉成本）','#ce7c2e')]:
+    ax.plot(d.date,d.equity/1e6,label=label,color=col,lw=1.35)
+ax.set_yscale('log');ax.set_xlim(s.date.min(),s.date.max());ax.set_ylabel('帳戶資金（百萬元，log scale）',fontproperties=font)
+ax.set_title('成本後資金曲線（對數Y軸）：同期間、同本金、固定一口',fontproperties=font)
+ax.legend(prop=font,frameon=False);ax.grid(alpha=.18,which='both');ax.spines[['top','right']].set_visible(False)
+fig.tight_layout();fig.savefig(O/'equity_comparison_log.png',dpi=200);plt.close(fig)
 
 pdfmetrics.registerFont(TTFont('TC',str(B/'chinese_font.ttf')))
 styles={
@@ -65,6 +81,10 @@ def table(rows,widths=None):
         cells=tab.add_row().cells
         for cell,val in zip(cells,row):cell.text=str(val)
 def image(name):story.append(Image(str(O/name),width=505,height=202));doc.add_picture(str(O/name),width=Cm(17))
+def image_pair(left,right):
+    story.append(Table([[Image(str(O/left),width=245,height=98),Image(str(O/right),width=245,height=98)]],colWidths=[252,252]))
+    tab=doc.add_table(rows=1,cols=2)
+    for cell,name in zip(tab.rows[0].cells,[left,right]):cell.paragraphs[0].add_run().add_picture(str(O/name),width=Cm(8.1))
 
 title('1　研究目的與資料完整性')
 sub('法人交易強度＋價格趨勢：跨日持倉策略')
@@ -98,14 +118,15 @@ for year,g in annual.groupby('year'):
     ar.append([int(year),f'{q.net_pnl:,.0f}',pct(q.annual_return),f'{r.net_pnl:,.0f}',pct(r.annual_return)])
 table(ar,[45,140,90,140,90])
 text('2018、2026為部分年度；年度報酬未年化，以該年首日損益前權益為分母。PF=淨正損益合計／淨負損益絕對值合計。最長回撤包含期末未恢復區間，含初始本金高點及空手日。','small')
-page();title('5　資金曲線與回撤深度疊圖')
-image('equity_comparison.png')
-text('圖一：2018/08/31～2026/10/05，兩者皆自1,000萬元起始，扣除所有成交及轉倉成本。策略期末1,327.75萬元，基準1,826.84萬元；策略較平穩，但捕捉的絕對收益較少。','small')
+page();title('5　資金曲線、回撤與風險配平診斷')
+image_pair('equity_comparison.png','equity_comparison_log.png')
+text('圖一：左為線性Y軸、右為對數Y軸。兩者皆自1,000萬元起始並扣除所有成交與轉倉成本；log-y版本只改變視覺尺度，不改變任何報酬或風險計算。','small')
 image('underwater_comparison.png')
-text('圖二：日末權益相對含初始本金的歷史高點回撤。策略MDD 3.93%，基準11.12%；策略最長回撤482交易日／722日曆日，基準366／555。回撤較淺，但等待恢復的時間更長。','small')
-sub('讀圖與風險口徑')
-text('策略最大比例回撤發生於2022/06/14，最大金額回撤發生於2026/07/08；兩者獨立取最大值。固定一口不隨獲利加碼，日末隔夜留倉658日，約占共同期間33.43%。退出日開盤前仍有持倉，不能把日末空手當作全天無曝險。')
-text('圖表沒有盤中及夜盤評價，無法顯示最壞的瞬時損失、完整保證金需求或精確強平風險。完整逐日、成交與契約月份轉換附在工作簿。','small')
+text('圖二：日末權益相對含初始本金的歷史高點回撤。策略MDD 3.93%，基準11.12%；策略回撤較淺，但固定一口比較同時含有不同市場曝險。','small')
+sub('事後波動配平診斷（不可直接交易）')
+table([['指標','固定一口基準','波動配平診斷'],['TX-equivalent','1.000',f'{vm.position_equivalent:.3f}'],['年化波動',pct(mb.annual_volatility),pct(vm.annual_volatility)],['CAGR',pct(mb.CAGR),pct(vm.CAGR)],['Sharpe',ratio(mb.Sharpe),ratio(vm.Sharpe)],['MDD',pct(mb.MDD_pct),pct(vm.MDD_pct)],['Calmar',ratio(mb.Calmar),ratio(vm.Calmar)]],[165,165,165])
+text(f'配平係數以完整樣本事後求得，使基準年化波動由{pct(mb.annual_volatility)}降至策略的{pct(ms.annual_volatility)}；結果約為{vm.position_equivalent:.3f}口TX-equivalent。基準毛損益、手續費、稅與滑價成本都按同一比例縮放，因此只是風險比較診斷，不代表可實際下單的整口TX策略。','small')
+text('固定一口仍是主結果，因為它可直接對應實際合約；波動配平只用來避免把策略較低MDD完全誤解為訊號本身的優勢。圖表也沒有盤中及夜盤評價，不能代表最壞瞬時損失或精確保證金風險。','small')
 page();title('6　成本敏感度與條件診斷')
 sub('滑價增加後是否仍保留成果')
 rows=[['每邊滑價','策略報酬','策略Sharpe','基準報酬','基準Sharpe']]
@@ -159,8 +180,8 @@ ws=w.create_sheet('欄位中文說明');ws.append(['欄位','定義'])
 dictionary=[('signal_date','昨日盤後訊號日期'),('institution_net_trade_qty','三法人淨交易口數合計'),('institution_total_trade_qty','三法人買進及賣出交易口數合計'),('trade_intensity','淨交易口數合計除以總交易口數'),('intensity_ma20','含訊號日的20日交易強度平均'),('signal_close / price_ma20','訊號日近月收盤／其20日平均'),('target / buy_condition','當日目標部位／昨日訊號條件'),('position_before / position_after','昨日收盤部位／本日收盤部位'),('contract_after','日末持有實際契約；空手時空白'),('gross_pnl / pnl','毛損益／淨損益，均為新臺幣'),('fee / tax / slippage_cost / cost','手續費／稅／滑價／逐日總成本'),('total_cost','完整方向交易的全部成本'),('entry_raw / exit_raw','未含滑價的實際進出成交價'),('entry_execution / exit_execution','含滑價進出價'),('episode_id / segment_id','完整方向交易／實際契約分段編號'),('roll / reason','是否轉倉／成交原因'),('equity / daily_return','日末權益／當日損益除以前日權益'),('drawdown_pct / drawdown_amount','相對含期初本金高點的回撤比例／金額')]
 for row in dictionary:ws.append(row)
 ws.column_dimensions['A'].width=46;ws.column_dimensions['B'].width=66;ws.freeze_panes='A2'
-ws=w.create_sheet('資金回撤疊圖');ws['A1']='同期間、同本金、全部成本後；日末評價。'
-for name,cell in [('equity_comparison.png','A3'),('underwater_comparison.png','A31')]:
+ws=w.create_sheet('資金回撤疊圖');ws['A1']='同期間、同本金、全部成本後；日末評價。線性與log-y資金曲線均保留。'
+for name,cell in [('equity_comparison.png','A3'),('equity_comparison_log.png','A31'),('underwater_comparison.png','A59')]:
     im=ExcelImage(O/name);im.width=940;im.height=374;ws.add_image(im,cell)
 buf=io.BytesIO();w.save(buf);payload=buf.getvalue()
 with zipfile.ZipFile(io.BytesIO(payload)) as z:assert z.testzip() is None

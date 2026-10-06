@@ -111,6 +111,47 @@ def metrics(df,tr):
                 annual_volatility=df.daily_return.std(ddof=1)*np.sqrt(252),fee=df.fee.sum(),tax=df.tax.sum(),slippage_cost=df.slippage_cost.sum())
 
 
+def volatility_matched_benchmark(df,target_annual_volatility):
+    """事後將基準逐日損益與成本同比例縮放，使年化波動匹配策略。
+
+    這是 fractional TX-equivalent 診斷，不是可直接交易的整口部位；縮放係數使用完整樣本求得。
+    """
+    if df.empty:raise ValueError('volatility-matched benchmark requires non-empty daily data')
+    if not np.isfinite(target_annual_volatility) or target_annual_volatility<=0:raise ValueError('target volatility must be positive and finite')
+    cols=['gross_pnl','fee','tax','slippage_cost','cost','pnl']
+    if any(c not in df for c in cols):raise ValueError('benchmark daily data is missing P&L/cost columns')
+    def scaled(scale):
+        d=df[['date']].copy();d['position_equivalent']=scale
+        for col in cols:d[col]=df[col].astype(float)*scale
+        d['equity']=CAPITAL+d.pnl.cumsum()
+        if not np.isfinite(d.equity).all() or (d.equity<=0).any():raise ValueError('scaled benchmark equity must remain positive and finite')
+        d['daily_return']=d.pnl/d.equity.shift(fill_value=CAPITAL)
+        peak=d.equity.cummax().clip(lower=CAPITAL)
+        d['drawdown_pct']=d.equity/peak-1;d['drawdown_amount']=d.equity-peak
+        return d
+    def annual_vol(scale):
+        d=scaled(scale);return float(d.daily_return.std(ddof=1)*np.sqrt(252))
+    lo,hi=0.,1.
+    while annual_vol(hi)<target_annual_volatility:
+        hi*=2
+        if hi>8:raise ValueError('could not bracket volatility-matching scale safely')
+    for _ in range(100):
+        mid=(lo+hi)/2
+        if annual_vol(mid)<target_annual_volatility:lo=mid
+        else:hi=mid
+    scale=(lo+hi)/2;d=scaled(scale)
+    start,end=d.date.iloc[0],d.date.iloc[-1];years=((end-start).days+1)/365.25
+    ret=d.equity.iloc[-1]/CAPITAL-1;cagr=(1+ret)**(1/years)-1;mdd=-d.drawdown_pct.min()
+    sd=d.daily_return.std(ddof=1);sharpe=d.daily_return.mean()/sd*np.sqrt(252)
+    summary=dict(series='Buy-and-Hold波動配平診斷',matching_scope='full-sample post-hoc',directly_tradable=False,
+        position_equivalent=scale,cost_treatment='gross P&L, fee, tax and slippage cost scaled proportionally',
+        target_annual_volatility=target_annual_volatility,annual_volatility=sd*np.sqrt(252),start=str(start.date()),end=str(end.date()),days=len(d),
+        final_equity=d.equity.iloc[-1],net_pnl=d.pnl.sum(),gross_pnl=d.gross_pnl.sum(),cost_total=d.cost.sum(),cumulative_return=ret,CAGR=cagr,
+        MDD_amount=-d.drawdown_amount.min(),MDD_pct=mdd,Sharpe=sharpe,Calmar=cagr/mdd if mdd else np.nan,
+        fee=d.fee.sum(),tax=d.tax.sum(),slippage_cost=d.slippage_cost.sum())
+    return d,summary
+
+
 def run(c):
     position=0;held=None;previous=None;equity=CAPITAL;episode=0;segment=0;rows=[];events=[];segments=[]
     def leg(date,con,side,raw,reason):
@@ -183,10 +224,14 @@ c=dict(code='V04',group='法人交易強度',name='法人交易強度20日＋價
 m,ann=run(c)
 strategy_daily=pd.read_csv(OUT/'V04_daily.csv',parse_dates=['date','signal_date'])
 strategy_trades=pd.read_csv(OUT/'V04_trades.csv')
+strategy_events=pd.read_csv(OUT/'V04_events.csv')
 # 日末留倉日數為隔夜曝險日數；退出日開盤前也有曝險，另列完整交易次數。
 m['annual_volatility']=strategy_daily.daily_return.std(ddof=1)*np.sqrt(252)
 m.update(fee=strategy_daily.fee.sum(),tax=strategy_daily.tax.sum(),slippage_cost=strategy_daily.slippage_cost.sum())
 mb=metrics(bh,contract_trades)
+vm_daily,vm_summary=volatility_matched_benchmark(bh,m['annual_volatility'])
+assert np.isclose(vm_summary['annual_volatility'],m['annual_volatility'],rtol=0,atol=1e-12)
+vm_summary_df=pd.DataFrame([vm_summary])
 comparison=pd.DataFrame([dict(m),dict(series='Buy-and-Hold近月多單',**mb)])
 annual=[ann.assign(series='strategy')]
 for year,z in bh.groupby(bh.date.dt.year):
@@ -218,13 +263,14 @@ assert (strategy_daily.target==strategy_daily.buy_condition.astype(int)).all()
 assert np.isclose(m['net_pnl'],3277536.576) and np.isclose(m['Sharpe'],1.3020005980912697)
 assert np.isclose(mb['net_pnl'],8268352.664)
 frames={'metrics_comparison':comparison,'strategy_daily':strategy_daily,'strategy_trades':strategy_trades,
-    'strategy_events':pd.read_csv(OUT/'V04_events.csv'),'strategy_contract_segments':pd.read_csv(OUT/'V04_contract_segments.csv'),
+    'strategy_events':strategy_events,'strategy_contract_segments':pd.read_csv(OUT/'V04_contract_segments.csv'),
     'benchmark_daily':bh,'benchmark_events':events,'benchmark_contract_trades':contract_trades,
+    'volatility_matched_benchmark_summary':vm_summary_df,'volatility_matched_benchmark_daily':vm_daily,
     'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'indicator_features':x.reset_index()}
 for name,df in frames.items():df.to_csv(OUT/(name+'.csv'),index=False,encoding='utf-8-sig')
 buf=io.BytesIO()
 with pd.ExcelWriter(buf,engine='openpyxl') as w:
-    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵']
+    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','波動配平基準_摘要','波動配平基準_逐日','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵']
     for (name,df),label in zip(frames.items(),labels):
         df.to_excel(w,sheet_name=label,index=False);ws=w.sheets[label];ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
         for col in ws.columns:ws.column_dimensions[col[0].column_letter].width=max(14,min(34,len(str(col[0].value))+2))
@@ -238,5 +284,13 @@ validation=dict(period=[str(START.date()),str(END.date())],days=len(main),select
     parameters=dict(capital=CAPITAL,multiplier=MULT,fee_per_leg=FEE,tax_rate=TAX,slippage_per_leg=SLIP,intensity_window=20,price_window=20),
     python=platform.python_version(),pandas=pd.__version__,input_sha256={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in (BASE/'input').glob('*.csv')})
 (OUT/'validation.json').write_text(json.dumps(validation,ensure_ascii=False,indent=2))
+final_verification=dict(
+    strategy=dict(days=len(strategy_daily),executions=len(strategy_events),net_pnl=float(m['net_pnl']),final_equity=float(m['final_equity'])),
+    benchmark=dict(days=len(bh),executions=len(events),net_pnl=float(mb['net_pnl']),final_equity=float(mb['final_equity'])),
+    volatility_matched_benchmark=dict(days=len(vm_daily),position_equivalent=float(vm_summary['position_equivalent']),
+        annual_volatility=float(vm_summary['annual_volatility']),target_annual_volatility=float(vm_summary['target_annual_volatility']),
+        final_equity=float(vm_summary['final_equity']),directly_tradable=False))
+(OUT/'final_verification.json').write_text(json.dumps(final_verification,ensure_ascii=False,indent=2))
 print(comparison[['series','cumulative_return','CAGR','Sharpe','Calmar','MDD_pct','MDD_amount','trades','win_rate','profit_factor','cost_total']].to_string(index=False))
+print('波動配平診斷：',vm_summary_df[['position_equivalent','annual_volatility','CAGR','Sharpe','Calmar','MDD_pct','cost_total']].to_string(index=False))
 print('消融診斷：',ablation[['series','Sharpe','cumulative_return','MDD_pct']].to_string(index=False))
