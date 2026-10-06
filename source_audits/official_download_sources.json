@@ -1,0 +1,232 @@
+[
+  {
+    "file": "2016.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2016"
+    },
+    "bytes": 3869315,
+    "sha256": "77a69a7305e3ddfa3f953a05d3a4a719c31fa28e4b65cbdc2f0c2513a15ff59c"
+  },
+  {
+    "file": "2017.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2017"
+    },
+    "bytes": 4050410,
+    "sha256": "3e429dfb8a9b12e6ed5e1d61444df85cd39cc0d6d1725a3c800dab3cf4955fee"
+  },
+  {
+    "file": "2018.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2018"
+    },
+    "bytes": 5281328,
+    "sha256": "a8c8639334826137e6188f31aa7541dce222208f472e81b316641343536f3bd1"
+  },
+  {
+    "file": "2019.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2019"
+    },
+    "bytes": 5589554,
+    "sha256": "7fc1d8c2d36faaf7286ed4d6c4f040c12d3e69e33de967e8b6469841696cc42e"
+  },
+  {
+    "file": "2020.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2020"
+    },
+    "bytes": 6409351,
+    "sha256": "a22b673a5c04b612958f4b7764b03146bc94c1a49b5bd40eaa5784c2001665f9"
+  },
+  {
+    "file": "2021.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2021"
+    },
+    "bytes": 7032324,
+    "sha256": "aeb574dd711bab6aebd6c6eac58d8e2008c0047eef0ab239236b568dc8f23ac0"
+  },
+  {
+    "file": "2022.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2022"
+    },
+    "bytes": 7559993,
+    "sha256": "505af0c77cfa8d0bd0fe3f78c9d7932e972f92582f25c1da1f8a41f30b122170"
+  },
+  {
+    "file": "2023.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2023"
+    },
+    "bytes": 7839273,
+    "sha256": "2ca6755e06c987038a91ebda763e75e58637babf86578cf40a82cf597b84858d"
+  },
+  {
+    "file": "2024.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2024"
+    },
+    "bytes": 9274958,
+    "sha256": "cb087e4e5a1607a89fad7ca370c53b9d2793a1d7a26495fa49680e567cdd8c5c"
+  },
+  {
+    "file": "2025.zip",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "2",
+      "his_year": "2025"
+    },
+    "bytes": 9669941,
+    "sha256": "ad37930e535bc49fa39e8329eab306101f659882914aa57b1e2768b7eaaa8d64"
+  },
+  {
+    "file": "2026_01.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/01/01",
+      "queryEndDate": "2026/01/31"
+    },
+    "bytes": 46944,
+    "sha256": "5361c05dc343abfe8ba3a3285c1d958a277defd1168233eda5d7b0a5d6b486a6"
+  },
+  {
+    "file": "2026_02.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/02/01",
+      "queryEndDate": "2026/02/28"
+    },
+    "bytes": 28814,
+    "sha256": "4b324638c04072c42126df222f59e3835f9663e58f010e403d7779ce1777a3e2"
+  },
+  {
+    "file": "2026_03.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/03/01",
+      "queryEndDate": "2026/03/31"
+    },
+    "bytes": 54154,
+    "sha256": "e3d745e492540f2a02979f5f1646527baac26de664ddb7f0f23c988790a4e9ae"
+  },
+  {
+    "file": "2026_04.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/04/01",
+      "queryEndDate": "2026/04/30"
+    },
+    "bytes": 44017,
+    "sha256": "55c2336dfa41e66207f8b28bec989240876987a95dabc8c8dd2ae315a464152b"
+  },
+  {
+    "file": "2026_05.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/05/01",
+      "queryEndDate": "2026/05/31"
+    },
+    "bytes": 44759,
+    "sha256": "15f53e5ca5d57cea7afc2cc62a48545986d3fa9d2f2bb97b4ebda97f99bde5f5"
+  },
+  {
+    "file": "2026_06.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/06/01",
+      "queryEndDate": "2026/06/30"
+    },
+    "bytes": 45040,
+    "sha256": "f2ef3b93fb9caa0ba6e10b3f0f29faef01eec6a1330b2494a4266e6d5fec5e8c"
+  },
+  {
+    "file": "2026_07.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/07/01",
+      "queryEndDate": "2026/07/31"
+    },
+    "bytes": 48045,
+    "sha256": "aec749e51e3cfcba6dba0092c94e68369f6182e653ed63d0607eaa805428c487"
+  },
+  {
+    "file": "2026_08.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/08/01",
+      "queryEndDate": "2026/08/31"
+    },
+    "bytes": 44746,
+    "sha256": "266c51cf22b17cd26d0dfd0587d3ad2f41712a513576ece54227ace4bfec44f0"
+  },
+  {
+    "file": "2026_09.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/09/01",
+      "queryEndDate": "2026/09/30"
+    },
+    "bytes": 45933,
+    "sha256": "ed317f149d41edbf886c7fbe0774868dec6483c51c2b2a0e6ba8c0de4f892429"
+  },
+  {
+    "file": "2026_10.csv",
+    "request_url": "https://www.taifex.com.tw/cht/3/futDataDown",
+    "params": {
+      "down_type": "1",
+      "commodity_id": "TX",
+      "commodity_id2": "",
+      "queryStartDate": "2026/10/01",
+      "queryEndDate": "2026/10/05"
+    },
+    "bytes": 6133,
+    "sha256": "859dea901b9b5ad0905108d1693bac164ee38943f8f17256f4d6c56d9e47297d"
+  }
+]

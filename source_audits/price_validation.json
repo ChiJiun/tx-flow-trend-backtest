@@ -1,0 +1,128 @@
+{
+  "period_start": "2016-10-05",
+  "period_end": "2026-10-05",
+  "all_contract_rows": 14202,
+  "trading_days": 2438,
+  "contracts_in_window": 126,
+  "nearest_contract_months": 121,
+  "first_actual_date": "2016-10-05",
+  "last_actual_date": "2026-10-05",
+  "all_missing_open_or_close_rows": 145,
+  "near_missing_prices": 0,
+  "duplicate_date_contract_rows": 0,
+  "contract_interior_missing_days": 0,
+  "other_product_dates_without_TX": [],
+  "source_files": [
+    {
+      "file": "2016.zip",
+      "TX_general_month_rows": 1220,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2017.zip",
+      "TX_general_month_rows": 1230,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2018.zip",
+      "TX_general_month_rows": 1364,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2019.zip",
+      "TX_general_month_rows": 1452,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2020.zip",
+      "TX_general_month_rows": 1470,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2021.zip",
+      "TX_general_month_rows": 1464,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2022.zip",
+      "TX_general_month_rows": 1476,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2023.zip",
+      "TX_general_month_rows": 1434,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2024.zip",
+      "TX_general_month_rows": 1452,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2025.zip",
+      "TX_general_month_rows": 1458,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_01.csv",
+      "TX_general_month_rows": 126,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_02.csv",
+      "TX_general_month_rows": 72,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_03.csv",
+      "TX_general_month_rows": 132,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_04.csv",
+      "TX_general_month_rows": 120,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_05.csv",
+      "TX_general_month_rows": 120,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_06.csv",
+      "TX_general_month_rows": 126,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_07.csv",
+      "TX_general_month_rows": 132,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_08.csv",
+      "TX_general_month_rows": 126,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_09.csv",
+      "TX_general_month_rows": 120,
+      "encoding": "cp950"
+    },
+    {
+      "file": "2026_10.csv",
+      "TX_general_month_rows": 18,
+      "encoding": "cp950"
+    }
+  ],
+  "exclusions": {
+    "non_month_TX_rows": 18548,
+    "night_rows": 28405
+  },
+  "TEJ_overlap": {
+    "compared_rows": 5286,
+    "matching_open_close_rows": 5286
+  },
+  "all_missing_any_OHLC_rows": 179,
+  "near_missing_any_OHLC_rows": 0,
+  "OHLC_checked_against_official_source_rows": 14202
+}

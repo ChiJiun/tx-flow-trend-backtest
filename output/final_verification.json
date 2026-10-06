@@ -1,0 +1,14 @@
+{
+  "strategy": {
+    "days": 1968,
+    "executions": 368,
+    "net_pnl": 3277536.576,
+    "final_equity": 13277536.576000012
+  },
+  "benchmark": {
+    "days": 1968,
+    "executions": 196,
+    "net_pnl": 8268352.664,
+    "final_equity": 18268352.664
+  }
+}

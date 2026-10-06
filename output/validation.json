@@ -1,0 +1,32 @@
+{
+  "period": [
+    "2018-08-31",
+    "2026-10-05"
+  ],
+  "days": 1968,
+  "selected_from_prior_18_candidates": true,
+  "independent_out_of_sample": false,
+  "all_strategy_and_benchmark_pnl_reconciled": true,
+  "signal_dates_before_execution": true,
+  "first_strategy_overnight_days": 658,
+  "strategy_trades": 147,
+  "strategy_rolls": 37,
+  "benchmark_rolls": 97,
+  "parameters": {
+    "capital": 10000000.0,
+    "multiplier": 200.0,
+    "fee_per_leg": 50.0,
+    "tax_rate": 2e-05,
+    "slippage_per_leg": 2.0,
+    "intensity_window": 20,
+    "price_window": 20
+  },
+  "python": "3.12.14",
+  "pandas": "2.2.3",
+  "input_sha256": {
+    "institutional.csv": "78103b34af65c670971c7bea924d05276a798d420cc9bb4bdf3f3860594020f1",
+    "prices.csv": "76ad5d25ae640156048c1fb71ec78b6f5d614e744d0d68f9d62112aab6e74eeb",
+    "contract_inventory.csv": "0bfa058145f98d4387a18072af1e03a61944eec4fb3490691698902f17224c00",
+    "all_contracts.csv": "0227209ace6f044e143e0d7dd369f9927d801d5fc0125e30b6b3a3640a361d43"
+  }
+}
