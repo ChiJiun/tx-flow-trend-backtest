@@ -37,7 +37,7 @@ assert expected_sheets.issubset(wb.sheetnames), f"missing workbook sheets: {expe
 
 doc = Document(BASE / "TX_flow_trend_report.docx")
 doc_text = "\n".join(p.text for p in doc.paragraphs)
-assert "事後波動配平診斷（不可直接交易）" in doc_text, "DOCX missing volatility-matched diagnostic"
+assert "波動配平診斷（事後分析）" in doc_text, "DOCX missing volatility-matched diagnostic"
 
 assert (BASE / "TX_flow_trend_report.pdf").read_bytes()[:5] == b"%PDF-", "report PDF signature invalid"
 for path in [OUT / "equity_comparison.png", OUT / "equity_comparison_log.png", OUT / "underwater_comparison.png"]:
