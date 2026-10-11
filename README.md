@@ -62,7 +62,7 @@ python backtest.py
 python make_report.py
 ```
 
-回測程式內含目前資料的淨損益及Sharpe重現斷言；修改資料期間或參數時應同步更新該參考斷言，避免把預期變更誤判成錯誤。再次跑backtest會重建基礎工作簿，之後跑make_report才會補回圖表及中文字典。
+`regression_baseline.json` 集中記錄目前固定資料的期間、參數、輸入 SHA-256、關鍵指標及容差，`backtest.py` 與 `ci_verify.py` 共用。修改期間、資料或參數時，先檢查損益與訊號對帳及資料來源，再審查新結果並增加 `baseline_revision`、更新參考值及雜湊；不應因回歸失敗直接把新數值複製進基準。mismatch 會列出期望值與實際值。再次跑backtest會重建基礎工作簿，之後跑make_report才會補回圖表及中文字典。
 
 `output/validation.json`記錄參數、輸入SHA-256及訊號／帳務驗證；`output/final_verification.json`現在由 `backtest.py` 每次重建，記錄策略、固定一口基準與波動配平診斷的關鍵重現值。每日損益、契約段損益、成交成本已對帳；成交報價另核對實際契約開盤或收盤。XLSX與DOCX ZIP容器、PDF/PNG簽章及必要輸出可由 `python ci_verify.py` 再驗證。
 

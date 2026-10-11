@@ -1,6 +1,7 @@
 """法人交易強度20日＋價格趨勢：策略與含轉倉成本Buy-and-Hold重現。"""
 from pathlib import Path
 import pandas as pd, numpy as np, json, io, zipfile, hashlib, platform
+from regression_baseline import verify_regression_baseline
 BASE=Path(__file__).resolve().parent; OUT=BASE/'output'; OUT.mkdir(exist_ok=True)
 CAPITAL=10_000_000.; MULT=200.; FEE=50.; TAX=.00002; SLIP=2.
 START=pd.Timestamp('2018-08-31'); END=pd.Timestamp('2026-10-05')
@@ -248,7 +249,8 @@ sensitivity=pd.DataFrame(sens)
 # 消融只作事後描述：分別移除籌碼或價格條件，沒有據此改動主策略。
 ablation=[]
 for code,name,condition in [('flow_only','交易強度20日單獨',x.intensity_ma20>0),('price_only','價格20日趨勢單獨',x.close>x.price_ma20)]:
-    mm,_=run(dict(c,code=code,name=name,target=condition.astype(int).shift(1).reindex(main_dates)));ablation.append(mm)
+    rule={'flow_only':'交易強度MA20>0；隔日開盤多單/空手','price_only':'近月收盤>價格MA20；隔日開盤多單/空手'}[code]
+    mm,_=run(dict(c,code=code,name=name,group='交易強度' if code=='flow_only' else '價格趨勢',rule=rule,target=condition.astype(int).shift(1).reindex(main_dates)));ablation.append(mm)
 ablation=pd.DataFrame(ablation)
 splits=[]
 for name,df in [('strategy',strategy_daily),('benchmark',bh)]:
@@ -260,8 +262,12 @@ features=x[['institution_net_trade_qty','institution_total_trade_qty','trade_int
 features=features.rename(columns={'date':'signal_date','close':'signal_close'})
 strategy_daily=strategy_daily.merge(features,on='signal_date',how='left')
 assert (strategy_daily.target==strategy_daily.buy_condition.astype(int)).all()
-assert np.isclose(m['net_pnl'],3277536.576) and np.isclose(m['Sharpe'],1.3020005980912697)
-assert np.isclose(mb['net_pnl'],8268352.664)
+period=[str(START.date()),str(END.date())]
+parameters=dict(capital=CAPITAL,multiplier=MULT,fee_per_leg=FEE,tax_rate=TAX,slippage_per_leg=SLIP,intensity_window=20,price_window=20)
+input_sha256={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in (BASE/'input').glob('*.csv')}
+verify_regression_baseline(dict(period=period,parameters=parameters,input_sha256=input_sha256,
+    metrics={'strategy.days':len(strategy_daily),'strategy.net_pnl':float(m['net_pnl']),'strategy.Sharpe':float(m['Sharpe']),
+             'benchmark.days':len(bh),'benchmark.net_pnl':float(mb['net_pnl'])}))
 frames={'metrics_comparison':comparison,'strategy_daily':strategy_daily,'strategy_trades':strategy_trades,
     'strategy_events':strategy_events,'strategy_contract_segments':pd.read_csv(OUT/'V04_contract_segments.csv'),
     'benchmark_daily':bh,'benchmark_events':events,'benchmark_contract_trades':contract_trades,
@@ -278,11 +284,11 @@ with pd.ExcelWriter(buf,engine='openpyxl') as w:
 payload=buf.getvalue()
 with zipfile.ZipFile(io.BytesIO(payload)) as z:assert z.testzip() is None
 (BASE/'TX_flow_trend_workbook.xlsx').write_bytes(payload)
-validation=dict(period=[str(START.date()),str(END.date())],days=len(main),selected_from_prior_18_candidates=True,
+validation=dict(period=period,days=len(main),selected_from_prior_18_candidates=True,
     independent_out_of_sample=False,all_strategy_and_benchmark_pnl_reconciled=True,signal_dates_before_execution=True,
     first_strategy_overnight_days=m['exposure_days'],strategy_trades=m['trades'],strategy_rolls=m['rolls'],benchmark_rolls=int(bh['roll'].sum()),
-    parameters=dict(capital=CAPITAL,multiplier=MULT,fee_per_leg=FEE,tax_rate=TAX,slippage_per_leg=SLIP,intensity_window=20,price_window=20),
-    python=platform.python_version(),pandas=pd.__version__,input_sha256={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in (BASE/'input').glob('*.csv')})
+    parameters=parameters,
+    python=platform.python_version(),pandas=pd.__version__,input_sha256=input_sha256)
 (OUT/'validation.json').write_text(json.dumps(validation,ensure_ascii=False,indent=2))
 final_verification=dict(
     strategy=dict(days=len(strategy_daily),executions=len(strategy_events),net_pnl=float(m['net_pnl']),final_equity=float(m['final_equity'])),
