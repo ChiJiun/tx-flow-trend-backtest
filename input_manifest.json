@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "freeze_date": "2026-10-05",
+  "hash_scope": "SHA-256 of Git LF bytes; CRLF checkout normalized for validation",
+  "retrieval_timestamp": null,
+  "retrieval_timestamp_note": "Original acquisition timestamp was not recorded; no point-in-time snapshot is asserted.",
+  "inputs": {
+    "all_contracts.csv": {
+      "sha256": "0227209ace6f044e143e0d7dd369f9927d801d5fc0125e30b6b3a3640a361d43",
+      "source": "TAIFEX historical futures transactions; see source_audits/official_download_sources.json",
+      "coverage": {
+        "rows": 14202,
+        "first": "2016-10-05",
+        "last": "2026-10-05"
+      }
+    },
+    "contract_inventory.csv": {
+      "sha256": "0bfa058145f98d4387a18072af1e03a61944eec4fb3490691698902f17224c00",
+      "source": "Derived inventory of downloaded TAIFEX TX contracts",
+      "coverage": {
+        "rows": 135,
+        "first": "2016-01-04",
+        "last": "2026-10-05"
+      }
+    },
+    "institutional.csv": {
+      "sha256": "78103b34af65c670971c7bea924d05276a798d420cc9bb4bdf3f3860594020f1",
+      "source": "Selected TAIFEX-equivalent institutional volume series from user_original_3years.csv; compare FinMind_raw_response.json",
+      "coverage": {
+        "rows": 6090,
+        "first": "2018-06-05",
+        "last": "2026-10-05"
+      }
+    },
+    "prices.csv": {
+      "sha256": "76ad5d25ae640156048c1fb71ec78b6f5d614e744d0d68f9d62112aab6e74eeb",
+      "source": "Selected near-month TX from TAIFEX all_contracts.csv",
+      "coverage": {
+        "rows": 2438,
+        "first": "2016-10-05",
+        "last": "2026-10-05"
+      }
+    }
+  }
+}
