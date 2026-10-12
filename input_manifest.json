@@ -32,6 +32,11 @@
         "last": "2026-10-05"
       }
     },
+    "taiex.csv": {
+      "sha256": "47ff1c2d64fd80957711d25856ec212edc0acca6b0c9158e3e878cd9558a47c4",
+      "source": "TWSE official TAIEX daily price index; see source_audits/taiex_sources.json",
+      "coverage": {"rows": 1969, "first": "2018-08-30", "last": "2026-10-05"}
+    },
     "prices.csv": {
       "sha256": "76ad5d25ae640156048c1fb71ec78b6f5d614e744d0d68f9d62112aab6e74eeb",
       "source": "Selected near-month TX from TAIFEX all_contracts.csv",

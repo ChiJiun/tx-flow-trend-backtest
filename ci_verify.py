@@ -33,13 +33,14 @@ for path in [BASE / "TX_flow_trend_workbook.xlsx", BASE / "TX_flow_trend_report.
 
 wb = load_workbook(BASE / "TX_flow_trend_workbook.xlsx", read_only=True)
 expected_sheets = {"波動配平基準_摘要", "波動配平基準_逐日", "資金回撤疊圖"}
-assert len(wb.sheetnames) == 20, f"unexpected workbook sheet count: {len(wb.sheetnames)}"
-assert {"法人濾網增量歸因", "價格單獨波動配平"}.issubset(wb.sheetnames)
+assert len(wb.sheetnames) == 22, f"unexpected workbook sheet count: {len(wb.sheetnames)}"
+assert {"法人濾網增量歸因", "價格單獨波動配平", "同曝險大盤比較摘要", "同曝險大盤比較逐日"}.issubset(wb.sheetnames)
 assert expected_sheets.issubset(wb.sheetnames), f"missing workbook sheets: {expected_sheets - set(wb.sheetnames)}"
 
 doc = Document(BASE / "TX_flow_trend_report.docx")
 doc_text = "\n".join(p.text for p in doc.paragraphs)
 assert "波動配平診斷（事後分析）" in doc_text, "DOCX missing volatility-matched diagnostic"
+assert "同起始曝險的大盤績效比較" in doc_text, "DOCX missing market-normalized comparison"
 
 assert (BASE / "TX_flow_trend_report.pdf").read_bytes()[:5] == b"%PDF-", "report PDF signature invalid"
 for path in [OUT / "equity_comparison.png", OUT / "equity_comparison_log.png", OUT / "underwater_comparison.png"]:
@@ -80,6 +81,13 @@ assert np.isclose(pd.read_csv(OUT / 'flow_incremental_attribution.csv').net_diff
 ablation = pd.read_csv(OUT / "ablation.csv").set_index("code")
 assert ablation.loc["flow_only", "rule"] == "交易強度MA20>0；隔日開盤多單/空手"
 assert ablation.loc["price_only", "rule"] == "近月收盤>價格MA20；隔日開盤多單/空手"
+market = pd.read_csv(OUT / 'market_normalized_summary.csv')
+assert len(market) == 3
+assert market.reference_capital.nunique() == 1
+assert market.loc[0, 'MDD_pct'] > strategy['MDD_pct']
+assert market.loc[0, 'cumulative_return'] < market.loc[2, 'cumulative_return']
+assert np.isclose(market.loc[0, 'net_pnl_equivalent'], strategy['net_pnl'], atol=1e-6)
+assert np.isclose(market.loc[1, 'net_pnl_equivalent'], benchmark['net_pnl'], atol=1e-6)
 assert np.isclose(vm["annual_volatility"], strategy["annual_volatility"], atol=1e-12, rtol=0)
 assert 0 < vm["position_equivalent"] < 1
 assert bool(vm["directly_tradable"]) is False

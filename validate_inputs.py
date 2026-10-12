@@ -11,6 +11,7 @@ INPUT = BASE / "input"
 BASELINE = json.loads((BASE / "regression_baseline.json").read_text(encoding="utf-8"))
 EXPECTED = {
     "prices.csv": {"date", "contract", "open", "high", "low", "close"},
+    "taiex.csv": {"date", "close"},
     "all_contracts.csv": {"date", "contract", "open", "high", "low", "close"},
     "contract_inventory.csv": {"contract", "first_observed_date", "last_observed_date", "official_rows"},
     "institutional.csv": {"日期", "商品名稱", "身份別", "多方交易口數", "空方交易口數", "多空交易口數淨額"},
@@ -32,6 +33,11 @@ def validate(base=BASE, enforce_hash=True):
         required_values = columns - ({"open", "high", "low", "close"} if filename == "all_contracts.csv" else set())
         assert not frame[list(required_values)].isna().any().any(), f"{filename}: required nulls"
         frames[filename] = frame
+    taiex = frames["taiex.csv"]
+    source = json.loads((base / "source_audits/taiex_sources.json").read_text(encoding="utf-8"))
+    assert source["sha256"] == manifest["inputs"]["taiex.csv"]["sha256"]
+    assert not taiex.duplicated("date").any() and taiex.date.is_monotonic_increasing
+    assert np.isfinite(taiex.close).all() and (taiex.close > 0).all()
     prices = frames["prices.csv"]
     contracts = frames["all_contracts.csv"]
     inv = frames["contract_inventory.csv"]
@@ -62,6 +68,8 @@ def validate(base=BASE, enforce_hash=True):
     assert (inst["多方交易口數"] - inst["空方交易口數"] == inst["多空交易口數淨額"]).all()
     assert (inst[["多方交易口數", "空方交易口數"]] >= 0).all().all()
     assert set(pd.to_datetime(prices.loc[pd.to_datetime(prices.date) >= pd.Timestamp(BASELINE['period'][0])].date)).issubset(set(dates))
+    comparison_dates = set(prices.loc[pd.to_datetime(prices.date).between(*BASELINE["period"]), "date"])
+    assert comparison_dates == set(taiex.loc[taiex.date >= BASELINE["period"][0], "date"])
     coverage = {}
     for filename, frame in frames.items():
         field = "日期" if filename == "institutional.csv" else ("first_observed_date" if filename == "contract_inventory.csv" else "date")
