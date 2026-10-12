@@ -2,7 +2,10 @@
 from pathlib import Path
 import pandas as pd, numpy as np, json, io, zipfile, hashlib, platform
 from regression_baseline import verify_regression_baseline
+from validate_inputs import validate
+from audit_diagnostics import diagnostics
 BASE=Path(__file__).resolve().parent; OUT=BASE/'output'; OUT.mkdir(exist_ok=True)
+validate()
 CAPITAL=10_000_000.; MULT=200.; FEE=50.; TAX=.00002; SLIP=2.
 START=pd.Timestamp('2018-08-31'); END=pd.Timestamp('2026-10-05')
 p=pd.read_csv(BASE/'input/prices.csv',parse_dates=['date']).sort_values('date').reset_index(drop=True)
@@ -252,6 +255,9 @@ for code,name,condition in [('flow_only','交易強度20日單獨',x.intensity_m
     rule={'flow_only':'交易強度MA20>0；隔日開盤多單/空手','price_only':'近月收盤>價格MA20；隔日開盤多單/空手'}[code]
     mm,_=run(dict(c,code=code,name=name,group='交易強度' if code=='flow_only' else '價格趨勢',rule=rule,target=condition.astype(int).shift(1).reindex(main_dates)));ablation.append(mm)
 ablation=pd.DataFrame(ablation)
+provider_audit,roll_audit,flow_attribution,price_vm=diagnostics(
+    BASE,OUT,p,lookup,raw,x,main_dates,strategy_daily,
+    pd.read_csv(OUT/'price_only_daily.csv',parse_dates=['date']),run,c,m,volatility_matched_benchmark)
 splits=[]
 for name,df in [('strategy',strategy_daily),('benchmark',bh)]:
     for label,mask in [('2018–2022',df.date.dt.year<=2022),('2023–2026',df.date.dt.year>=2023)]:
@@ -264,7 +270,7 @@ strategy_daily=strategy_daily.merge(features,on='signal_date',how='left')
 assert (strategy_daily.target==strategy_daily.buy_condition.astype(int)).all()
 period=[str(START.date()),str(END.date())]
 parameters=dict(capital=CAPITAL,multiplier=MULT,fee_per_leg=FEE,tax_rate=TAX,slippage_per_leg=SLIP,intensity_window=20,price_window=20)
-input_sha256={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in (BASE/'input').glob('*.csv')}
+input_sha256={f.name:hashlib.sha256(f.read_bytes().replace(b'\r\n',b'\n')).hexdigest() for f in (BASE/'input').glob('*.csv')}
 verify_regression_baseline(dict(period=period,parameters=parameters,input_sha256=input_sha256,
     metrics={'strategy.days':len(strategy_daily),'strategy.net_pnl':float(m['net_pnl']),'strategy.Sharpe':float(m['Sharpe']),
              'benchmark.days':len(bh),'benchmark.net_pnl':float(mb['net_pnl'])}))
@@ -272,11 +278,12 @@ frames={'metrics_comparison':comparison,'strategy_daily':strategy_daily,'strateg
     'strategy_events':strategy_events,'strategy_contract_segments':pd.read_csv(OUT/'V04_contract_segments.csv'),
     'benchmark_daily':bh,'benchmark_events':events,'benchmark_contract_trades':contract_trades,
     'volatility_matched_benchmark_summary':vm_summary_df,'volatility_matched_benchmark_daily':vm_daily,
-    'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'indicator_features':x.reset_index()}
+    'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'indicator_features':x.reset_index(),
+    'flow_incremental_attribution':flow_attribution,'price_only_volatility_matched_summary':pd.DataFrame([price_vm])}
 for name,df in frames.items():df.to_csv(OUT/(name+'.csv'),index=False,encoding='utf-8-sig')
 buf=io.BytesIO()
 with pd.ExcelWriter(buf,engine='openpyxl') as w:
-    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','波動配平基準_摘要','波動配平基準_逐日','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵']
+    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','波動配平基準_摘要','波動配平基準_逐日','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵','法人濾網增量歸因','價格單獨波動配平']
     for (name,df),label in zip(frames.items(),labels):
         df.to_excel(w,sheet_name=label,index=False);ws=w.sheets[label];ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
         for col in ws.columns:ws.column_dimensions[col[0].column_letter].width=max(14,min(34,len(str(col[0].value))+2))
