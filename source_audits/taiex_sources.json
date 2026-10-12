@@ -1,0 +1,17 @@
+{
+  "source": "Taiwan Stock Exchange (TWSE) TAIEX daily price index",
+  "file": "input/taiex.csv",
+  "first_session": "2018-08-31",
+  "first_session_open": 11037.26,
+  "first_session_close": 11063.94,
+  "last_session": "2026-10-05",
+  "rows": 1969,
+  "sha256": "47ff1c2d64fd80957711d25856ec212edc0acca6b0c9158e3e878cd9558a47c4",
+  "endpoint": "https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?date=YYYYMMDD&response=json",
+  "fallback_endpoint": "https://www.twse.com.tw/exchangeReport/FMTQIK?response=json&date=YYYYMMDD",
+  "first_open_endpoint": "https://www.twse.com.tw/indicesReport/MI_5MINS_HIST?response=json&date=20180831",
+  "retrieval_date": "2026-10-12",
+  "method": "Monthly official responses; ROC dates converted to Gregorian; FMTQIK TAIEX close. One pre-start date retained for cross-check. Official MI_5MINS_HIST first-day open.",
+  "price_only": true,
+  "total_return": false
+}

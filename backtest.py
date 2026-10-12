@@ -4,6 +4,7 @@ import pandas as pd, numpy as np, json, io, zipfile, hashlib, platform
 from regression_baseline import verify_regression_baseline
 from validate_inputs import validate
 from audit_diagnostics import diagnostics
+from market_normalized import build as build_market_normalized
 BASE=Path(__file__).resolve().parent; OUT=BASE/'output'; OUT.mkdir(exist_ok=True)
 validate()
 CAPITAL=10_000_000.; MULT=200.; FEE=50.; TAX=.00002; SLIP=2.
@@ -281,9 +282,12 @@ frames={'metrics_comparison':comparison,'strategy_daily':strategy_daily,'strateg
     'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'indicator_features':x.reset_index(),
     'flow_incremental_attribution':flow_attribution,'price_only_volatility_matched_summary':pd.DataFrame([price_vm])}
 for name,df in frames.items():df.to_csv(OUT/(name+'.csv'),index=False,encoding='utf-8-sig')
+market_summary=build_market_normalized()
+frames['market_normalized_summary']=market_summary
+frames['market_normalized_daily']=pd.read_csv(OUT/'market_normalized_daily.csv')
 buf=io.BytesIO()
 with pd.ExcelWriter(buf,engine='openpyxl') as w:
-    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','波動配平基準_摘要','波動配平基準_逐日','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵','法人濾網增量歸因','價格單獨波動配平']
+    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','波動配平基準_摘要','波動配平基準_逐日','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵','法人濾網增量歸因','價格單獨波動配平','同曝險大盤比較摘要','同曝險大盤比較逐日']
     for (name,df),label in zip(frames.items(),labels):
         df.to_excel(w,sheet_name=label,index=False);ws=w.sheets[label];ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
         for col in ws.columns:ws.column_dimensions[col[0].column_letter].width=max(14,min(34,len(str(col[0].value))+2))
