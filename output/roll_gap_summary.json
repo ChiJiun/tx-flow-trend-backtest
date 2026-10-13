@@ -1,0 +1,12 @@
+{
+  "roll_switches": 120,
+  "changed_signal_days": 14,
+  "raw_net_pnl": 3277536.576,
+  "adjusted_net_pnl": 3028972.772,
+  "raw_trades": 147,
+  "adjusted_trades": 151,
+  "raw_Sharpe": 1.3674407230136694,
+  "adjusted_Sharpe": 1.2448434912863013,
+  "diagnostic_only": true,
+  "point_in_time_gap": "New contract's previous close; known before switch day's signal."
+}

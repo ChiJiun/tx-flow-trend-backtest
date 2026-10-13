@@ -1,0 +1,2 @@
+﻿series,matching_scope,directly_tradable,position_equivalent,target_annual_volatility,annual_volatility,start,end,days,final_equity,net_pnl,gross_pnl,cost_total,cumulative_return,CAGR,MDD_amount,MDD_pct,Sharpe,Calmar
+價格單獨策略：事後波動配平,full-sample post-hoc,False,0.4369638050126946,0.0884166547109185,0.0884166547109185,2018-08-31,2026-10-05,1968,4303818.448797023,2108818.448797023,2185692.952673498,76874.50387647559,0.960737334303883,0.08669475310735075,644028.60011537,0.15252421456916354,1.0195522183723984,0.568399931461625

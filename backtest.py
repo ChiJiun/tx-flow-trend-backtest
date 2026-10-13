@@ -1,7 +1,12 @@
 """法人交易強度20日＋價格趨勢：策略與含轉倉成本Buy-and-Hold重現。"""
 from pathlib import Path
 import pandas as pd, numpy as np, json, io, zipfile, hashlib, platform
+from regression_baseline import verify_regression_baseline
+from validate_inputs import validate
+from audit_diagnostics import diagnostics
+from market_normalized import build as build_market_normalized
 BASE=Path(__file__).resolve().parent; OUT=BASE/'output'; OUT.mkdir(exist_ok=True)
+validate()
 MULT=200.; FEE=50.; TAX=.00002; SLIP=2.
 START=pd.Timestamp('2018-08-31'); END=pd.Timestamp('2026-10-05')
 p=pd.read_csv(BASE/'input/prices.csv',parse_dates=['date']).sort_values('date').reset_index(drop=True)
@@ -117,6 +122,40 @@ def metrics(df,tr):
                 MDD_pct=mdd,longest_drawdown_trading_days=longest,longest_drawdown_calendar_days=cal,
                 Sharpe=df.daily_return.mean()/df.daily_return.std(ddof=1)*np.sqrt(252),Calmar=cagr/mdd if mdd else None,
                 annual_volatility=df.daily_return.std(ddof=1)*np.sqrt(252),fee=df.fee.sum(),tax=df.tax.sum(),slippage_cost=df.slippage_cost.sum())
+
+
+def volatility_matched_benchmark(df,target_annual_volatility):
+    """Fractional, full-sample diagnostic retained only for price-only attribution."""
+    cols=['gross_pnl','fee','tax','slippage_cost','cost','pnl']
+    def scaled(scale):
+        d=df[['date']].copy();d['position_equivalent']=scale
+        for col in cols:d[col]=df[col].astype(float)*scale
+        d['equity']=CAPITAL+d.pnl.cumsum()
+        if not np.isfinite(d.equity).all() or (d.equity<=0).any():raise ValueError('scaled equity must be positive')
+        d['daily_return']=d.pnl/d.equity.shift(fill_value=CAPITAL)
+        peak=d.equity.cummax().clip(lower=CAPITAL)
+        d['drawdown_pct']=d.equity/peak-1;d['drawdown_amount']=d.equity-peak
+        return d
+    def annual_vol(scale):return float(scaled(scale).daily_return.std(ddof=1)*np.sqrt(252))
+    lo,hi=0.,1.
+    while annual_vol(hi)<target_annual_volatility:
+        hi*=2
+        if hi>8:raise ValueError('could not bracket volatility match')
+    for _ in range(100):
+        mid=(lo+hi)/2
+        if annual_vol(mid)<target_annual_volatility:lo=mid
+        else:hi=mid
+    scale=(lo+hi)/2;d=scaled(scale)
+    start,end=d.date.iloc[0],d.date.iloc[-1];years=((end-start).days+1)/365.25
+    total_return=d.equity.iloc[-1]/CAPITAL-1;cagr=(1+total_return)**(1/years)-1;mdd=-d.drawdown_pct.min()
+    sd=d.daily_return.std(ddof=1)
+    summary=dict(series='價格單獨策略：事後波動配平',matching_scope='full-sample post-hoc',directly_tradable=False,
+        position_equivalent=scale,target_annual_volatility=target_annual_volatility,
+        annual_volatility=sd*np.sqrt(252),start=str(start.date()),end=str(end.date()),days=len(d),
+        final_equity=d.equity.iloc[-1],net_pnl=d.pnl.sum(),gross_pnl=d.gross_pnl.sum(),cost_total=d.cost.sum(),
+        cumulative_return=total_return,CAGR=cagr,MDD_amount=-d.drawdown_amount.min(),MDD_pct=mdd,
+        Sharpe=d.daily_return.mean()/sd*np.sqrt(252),Calmar=cagr/mdd if mdd else np.nan)
+    return d,summary
 
 
 def run(c,persist=True):
@@ -280,8 +319,12 @@ sensitivity=pd.DataFrame(sens)
 # 消融只作事後描述：分別移除籌碼或價格條件，沒有據此改動主策略。
 ablation=[]
 for code,name,condition in [('flow_only','交易強度20日單獨',x.intensity_ma20>0),('price_only','價格20日趨勢單獨',x.close>x.price_ma20)]:
-    mm,_=run(dict(c,code=code,name=name,target=condition.astype(int).shift(1).reindex(main_dates)));ablation.append(mm)
+    rule={'flow_only':'交易強度MA20>0；隔日開盤多單/空手','price_only':'近月收盤>價格MA20；隔日開盤多單/空手'}[code]
+    mm,_=run(dict(c,code=code,name=name,group='交易強度' if code=='flow_only' else '價格趨勢',rule=rule,target=condition.astype(int).shift(1).reindex(main_dates)));ablation.append(mm)
 ablation=pd.DataFrame(ablation)
+provider_audit,roll_audit,flow_attribution,price_vm=diagnostics(
+    BASE,OUT,p,lookup,raw,x,main_dates,strategy_daily,
+    pd.read_csv(OUT/'price_only_daily.csv',parse_dates=['date']),run,c,m,volatility_matched_benchmark)
 splits=[]
 for name,df in [('strategy',strategy_daily),('benchmark',bh)]:
     for label,mask in [('2018–2022',df.date.dt.year<=2022),('2023–2026',df.date.dt.year>=2023)]:
@@ -294,15 +337,25 @@ strategy_daily=strategy_daily.merge(features,on='signal_date',how='left')
 assert (strategy_daily.target==strategy_daily.buy_condition.astype(int)).all()
 assert np.isclose(m['net_pnl'],3277536.576)
 assert np.isclose(mb['net_pnl'],8268352.664)
+period=[str(START.date()),str(END.date())]
+parameters=dict(capital=CAPITAL,multiplier=MULT,fee_per_leg=FEE,tax_rate=TAX,slippage_per_leg=SLIP,intensity_window=20,price_window=20)
+input_sha256={f.name:hashlib.sha256(f.read_bytes().replace(b'\r\n',b'\n')).hexdigest() for f in (BASE/'input').glob('*.csv')}
+verify_regression_baseline(dict(period=period,parameters=parameters,input_sha256=input_sha256,
+    metrics={'strategy.days':len(strategy_daily),'strategy.net_pnl':float(m['net_pnl']),'strategy.Sharpe':float(m['Sharpe']),
+             'benchmark.days':len(bh),'benchmark.net_pnl':float(mb['net_pnl'])}))
 frames={'metrics_comparison':comparison,'strategy_daily':strategy_daily,'strategy_trades':strategy_trades,
     'strategy_events':strategy_events,'strategy_contract_segments':pd.read_csv(OUT/'V04_contract_segments.csv'),
     'benchmark_daily':bh,'benchmark_events':events,'benchmark_contract_trades':contract_trades,
     'one_contract_risk_matched_summary':risk_summary_df,'one_contract_risk_matched_daily':risk_daily,'one_contract_risk_matched_distribution':risk_distribution,
-    'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'indicator_features':x.reset_index()}
+    'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'indicator_features':x.reset_index(),
+    'flow_incremental_attribution':flow_attribution,'price_only_volatility_matched_summary':pd.DataFrame([price_vm])}
 for name,df in frames.items():df.to_csv(OUT/(name+'.csv'),index=False,encoding='utf-8-sig')
+market_summary=build_market_normalized()
+frames['market_normalized_summary']=market_summary
+frames['market_normalized_daily']=pd.read_csv(OUT/'market_normalized_daily.csv')
 buf=io.BytesIO()
 with pd.ExcelWriter(buf,engine='openpyxl') as w:
-    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','一口風險配平_摘要','一口風險配平_逐日','一口風險配平_位移分布','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵']
+    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','一口風險配平_摘要','一口風險配平_逐日','一口風險配平_位移分布','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵','法人濾網增量歸因','價格單獨波動配平','同曝險大盤比較摘要','同曝險大盤比較逐日']
     for (name,df),label in zip(frames.items(),labels):
         df.to_excel(w,sheet_name=label,index=False);ws=w.sheets[label];ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
         for col in ws.columns:ws.column_dimensions[col[0].column_letter].width=max(14,min(34,len(str(col[0].value))+2))
@@ -310,12 +363,12 @@ with pd.ExcelWriter(buf,engine='openpyxl') as w:
 payload=buf.getvalue()
 with zipfile.ZipFile(io.BytesIO(payload)) as z:assert z.testzip() is None
 (BASE/'TX_flow_trend_workbook.xlsx').write_bytes(payload)
-validation=dict(period=[str(START.date()),str(END.date())],days=len(main),selected_from_prior_18_candidates=True,
+validation=dict(period=period,days=len(main),selected_from_prior_18_candidates=True,
     independent_out_of_sample=False,all_strategy_and_benchmark_pnl_reconciled=True,signal_dates_before_execution=True,
     first_strategy_overnight_days=m['exposure_days'],strategy_trades=m['trades'],strategy_rolls=m['rolls'],benchmark_rolls=int(bh['roll'].sum()),
-    parameters=dict(reference_capital=CAPITAL,reference_capital_basis='first benchmark entry raw open price times contract multiplier',
-        multiplier=MULT,fee_per_leg=FEE,tax_rate=TAX,slippage_per_leg=SLIP,intensity_window=20,price_window=20),
-    python=platform.python_version(),pandas=pd.__version__,input_sha256={f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in (BASE/'input').glob('*.csv')})
+    parameters=parameters,
+    reference_capital_basis='first benchmark entry raw open price times contract multiplier',
+    python=platform.python_version(),pandas=pd.__version__,input_sha256=input_sha256)
 (OUT/'validation.json').write_text(json.dumps(validation,ensure_ascii=False,indent=2))
 final_verification=dict(
     strategy=dict(days=len(strategy_daily),executions=len(strategy_events),net_pnl=float(m['net_pnl']),final_equity=float(m['final_equity'])),

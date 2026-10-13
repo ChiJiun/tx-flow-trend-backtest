@@ -20,10 +20,23 @@ from openpyxl.drawing.image import Image as ExcelImage
 B=Path(__file__).resolve().parent;O=B/'output';read=lambda name:pd.read_csv(O/(name+'.csv'))
 m=read('metrics_comparison');ms,mb=m.iloc[0],m.iloc[1];s=read('strategy_daily');bh=read('benchmark_daily')
 rm=read('one_contract_risk_matched_summary').iloc[0];rmd=read('one_contract_risk_matched_daily');rmdist=read('one_contract_risk_matched_distribution')
+market=read('market_normalized_daily');market_summary=read('market_normalized_summary')
+mn,mt,mi=[market_summary.iloc[i] for i in range(3)]
+reference_capital=float(mn.reference_capital)
 tr=read('strategy_trades');annual=read('annual_results');sens=read('cost_sensitivity');ab=read('ablation');splits=read('descriptive_time_splits')
 ev=read('strategy_events');bev=read('benchmark_events');v=json.loads((O/'validation.json').read_text())
-reference_capital=float(v['parameters']['reference_capital'])
-for d in [s,bh,rmd]:d['date']=pd.to_datetime(d.date)
+near_prices=pd.read_csv(B/'input/prices.csv',parse_dates=['date'])
+contracts=pd.read_csv(B/'input/all_contracts.csv')
+institutional=pd.read_csv(B/'input/institutional.csv')
+candidate_count=len(pd.read_csv(B/'source_audits/all_18_exploratory_candidates.csv'))
+source_audit=json.loads((O/'institutional_source_audit.json').read_text(encoding='utf-8'))
+roll_audit=json.loads((O/'roll_gap_summary.json').read_text(encoding='utf-8'))
+price_vm=read('price_only_volatility_matched_summary').iloc[0]
+flow_attribution=read('flow_incremental_attribution')
+price_start,price_end=near_prices.date.min(),near_prices.date.max()
+chip_dates=pd.to_datetime(institutional['日期'])
+assumptions=v['parameters']
+for d in [s,bh,rmd,market]:d['date']=pd.to_datetime(d.date)
 tr['entry_date']=pd.to_datetime(tr.entry_date);tr['exit_date']=pd.to_datetime(tr.exit_date)
 duration=(tr.exit_date-tr.entry_date).dt.days
 pct=lambda x:f'{x*100:.2f}%';money=lambda x:f'{x:,.2f}';ratio=lambda x:f'{x:.3f}'
@@ -35,6 +48,11 @@ def validate_equity_for_log(*frames):
         equity=pd.to_numeric(d.equity,errors='coerce')
         if not np.isfinite(equity).all() or (equity<=0).any():raise ValueError('log equity chart requires strictly positive finite equity')
 
+series=[
+    ('strategy','V04一口（扣成本）','#146f91'),
+    ('tx_buy_hold','TX一口買進持有（扣成本）','#ce7c2e'),
+    ('taiex','加權指數價格報酬','#496c59'),
+]
 for water in [False,True]:
     fig,ax=plt.subplots(figsize=(9.4,3.75))
     for d,label,col,ls in [(s,'法人交易強度＋價格趨勢','#146f91','-'),(bh,'Buy-and-Hold（固定一口）','#ce7c2e','-'),(rmd,'一口等曝險代表路徑','#526977','--')]:
@@ -96,11 +114,11 @@ def image_pair(left,right):
 
 title('1　研究目的與資料完整性')
 sub('法人交易強度＋價格趨勢：跨日持倉策略')
-text('研究假說：三大法人持續的淨買進活動，若同時伴隨價格上升趨勢，可能比單日部位異常更能辨識可持續的多頭環境。本研究以20日法人交易強度與20日價格均線建立一口多單／空手規則，並以計入轉倉成本的台指期近月Buy-and-Hold比較。')
-table([['資料','來源、期間與清理'],['TX日盤行情','TAIFEX年度ZIP及2026年月檔；2016/10/05～2026/10/05，2,438日、14,202筆實際月契約、126個契約。僅保留一般交易時段、六碼月契約。'],['三大法人交易','FinMind TX歷史資料與TAIFEX格式原始資料；2018/06/05～2026/10/05，2,030日、6,090筆三類法人資料。'],['正式回測期間','2018/08/31～2026/10/05，共1,968日，約8.1年。沿用前版共同起點，以便比較；本策略本身需要20日暖身。'],['缺漏處理','2016/10/05～2018/06/04缺408日籌碼，未補造。較早官方交易金額淨額空白，但本策略只用完整的交易口數。']])
-text('較新期間以TAIFEX格式原始資料優先，以降低不同資料來源歷史值差異造成的影響；三類法人日期均與行情交易日曆一致。資料未混入MTX、週契約、夜盤或價差交易。原始月契約共有179筆OHLC缺值紀錄，但策略及基準實際使用的進出、轉倉與評價價格均完整。')
-text('本策略由18個候選規則中篩選後固定參數重新回測，因此結果屬探索性全樣本分析，尚未以完全未參與策略選擇的資料進行獨立樣本外驗證。此限制在後續結論中另行討論。')
-text(f'主要結果：策略報酬{pct(ms.cumulative_return)}、Sharpe {ratio(ms.Sharpe)}、MDD {pct(ms.MDD_pct)}；基準報酬{pct(mb.cumulative_return)}、Sharpe {ratio(mb.Sharpe)}、MDD {pct(mb.MDD_pct)}。策略風險調整報酬較高，絕對收益較低。')
+text('研究假說：三大法人持續的淨買進活動，若同時伴隨價格上升趨勢，可能比單日部位異常更能辨識可持續的多頭環境。本研究以20日法人交易強度與20日價格均線建立一口多單／空手規則，以加權股價指數作大盤價格參考，另與計入轉倉成本的台指期近月Buy-and-Hold比較。')
+table([['資料','來源、期間與清理'],['TX日盤行情',f'TAIFEX年度ZIP及月檔；{price_start:%Y/%m/%d}～{price_end:%Y/%m/%d}，{near_prices.date.nunique():,}日、{len(contracts):,}筆實際月契約、{contracts.contract.nunique()}個契約。僅保留一般交易時段、六碼月契約。'],['三大法人交易',f'FinMind TX歷史資料與TAIFEX格式原始資料；{chip_dates.min():%Y/%m/%d}～{chip_dates.max():%Y/%m/%d}，{chip_dates.nunique():,}日、{len(institutional):,}筆三類法人資料。'],['正式回測期間',f'{ms.start}～{ms.end}，共{int(ms.days):,}日；本策略需要20日暖身。'],['缺漏處理',f'行情與法人資料起點不同；法人資料前的{near_prices.loc[near_prices.date<chip_dates.min(),"date"].nunique():,}個行情交易日未補造籌碼。較早官方交易金額淨額空白，但本策略只用完整的交易口數。']])
+text(f'較新期間以TAIFEX格式原始資料優先，以降低不同資料來源歷史值差異造成的影響；三類法人日期均與行情交易日曆一致。資料未混入MTX、週契約、夜盤或價差交易。原始月契約共有{contracts[['open','high','low','close']].isna().any(axis=1).sum()}筆OHLC缺值紀錄，但策略及基準實際使用的進出、轉倉與評價價格均完整。')
+text(f'本策略由{candidate_count}個候選規則中篩選後固定參數重新回測，因此結果屬探索性全樣本分析，尚未以完全未參與策略選擇的資料進行獨立樣本外驗證。此限制在後續結論中另行討論。')
+text(f'以首日一口TX名目價值{money(reference_capital)}元作共同起始資金，策略成本後累積報酬{pct(ms.cumulative_return)}、MDD {pct(ms.MDD_pct)}；同期加權指數價格報酬{pct(mi.cumulative_return)}、MDD {pct(mi.MDD_pct)}。固定一口TX買進持有為可交易期貨對照。各曲線逐日累加損益，回撤從各自的歷史高點計算。')
 page();title('2　指標定義、經濟意涵與訊號')
 table([['欄位／指標','定義與用途'],['日期／實際契約月份','交易日、TXYYYYMM；每日開、高、低、收都取同一實際月契約，未回溯調整。'],['多方／空方交易口數','法人當日買進／賣出成交口數。與仍未沖銷的未平倉口數是不同資料。[2]'],['法人淨交易口數 B','外資及陸資、投信、自營商的多方交易口數減空方交易口數，再合計。'],['法人總交易口數 V','三類法人多方與空方交易口數合計。只代表這三類法人，不是全市場成交量。'],['交易強度 Q=B/V','以口數標準化淨買進活動；B可為負，V為正。各類法人的成交流量可能含方向、避險與套利。'],['Q20／MA20','Q20為當日及前19交易日Q的算術平均；MA20為當日及前19日近月收盤均價。']])
 text('例如三類法人合計淨買進5,000口、買賣總口數200,000口，交易強度為2.5%。20日平均為正，表示近期平均成交傾向淨買方；但它不是新增多單口數，也不能把多次買賣直接視為留倉增加。')
@@ -142,24 +160,34 @@ for slip,g in sens.groupby('slippage_per_leg'):
     q=g[g.series=='strategy'].iloc[0];r=g[g.series=='benchmark'].iloc[0]
     rows.append([f'{slip:g}點',pct(q.cumulative_return),ratio(q.Sharpe),pct(r.cumulative_return),ratio(r.Sharpe)])
 table(rows,[75,105,110,105,110])
-s4=sens[(sens.series=='strategy')&(sens.slippage_per_leg==4)].iloc[0]
-text(f'基準2點設定下，策略毛損益{money(ms.gross_pnl)}元，成本{money(ms.cost_total)}元，占毛獲利{pct(ms.cost_total/ms.gross_pnl)}。其中手續費18,400元、期交稅26,463.42元、滑價147,200元。4點滑價時Sharpe仍為{ratio(s4.Sharpe)}，但固定滑價不能完整模擬極端行情的成交失敗與流動性惡化。')
+high_slip=sens[(sens.series=='strategy') & (sens.slippage_per_leg==sens.slippage_per_leg.max())].iloc[0]
+text(f'基準{v["parameters"]["slippage_per_leg"]:g}點設定下，策略毛損益{money(ms.gross_pnl)}元，成本{money(ms.cost_total)}元，占毛獲利{pct(ms.cost_total/ms.gross_pnl)}。其中手續費{money(ms.fee)}元、期交稅{money(ms.tax)}元、滑價{money(ms.slippage_cost)}元。{high_slip.slippage_per_leg:g}點滑價時Sharpe為{ratio(high_slip.Sharpe)}；固定滑價不能完整模擬極端行情的成交失敗與流動性惡化。')
 sub('拆開兩個條件：事後消融，不是樣本外')
 rows=[['規則','報酬','Sharpe','MDD'],['交易強度＋價格趨勢',pct(ms.cumulative_return),ratio(ms.Sharpe),pct(ms.MDD_pct)]]
 for r in ab.itertuples():rows.append([r.series,pct(r.cumulative_return),ratio(r.Sharpe),pct(r.MDD_pct)])
 table(rows,[220,95,95,95])
-text('合併條件降低了收益，也降低了日末回撤及波動。相較單獨交易強度或單獨價格均線，這個歷史樣本中的主要改善是風險效率，而不是提高總獲利。消融是在選定策略後作的描述，不能消除先前候選挑選造成的偏誤。')
+text('消融表列出雙條件、單獨法人條件及單獨價格條件在同一期間的結果；報酬、回撤與曝險可分別對照。消融是在選定策略後作的描述，不能消除先前候選挑選造成的偏誤。')
 sub('交易分布與成果集中')
-text(f'147筆交易勝率{pct(ms.win_rate)}、PF {ratio(ms.profit_factor)}；持有日曆日平均{duration.mean():.2f}日、中位數{duration.median():.0f}日，最長{duration.max()}日。前五筆獲利合計占總淨利{pct(tr.nlargest(5,"pnl").pnl.sum()/ms.net_pnl)}；2025與2026合計約占61.73%，仍需注意少數交易及近期年份的影響。')
-early=splits[(splits.series=='strategy')&(splits.period=='2018–2022')].iloc[0];late=splits[(splits.series=='strategy')&(splits.period=='2023–2026')].iloc[0]
-text(f'較早2018～2022淨利{early.net_pnl/1e4:.2f}萬元、描述性Sharpe {ratio(early.Sharpe)}；2023～2026淨利{late.net_pnl/1e4:.2f}萬元、Sharpe {ratio(late.Sharpe)}。兩段均為正，但2018、2022、2024年度為負。2024基準上漲而策略虧損，顯示趨勢過濾仍可能漏接行情或反覆進出。')
+strategy_annual=annual[annual.series=='strategy'].sort_values('year')
+recent_years=strategy_annual.year.tail(2).astype(int).tolist()
+recent_pnl=strategy_annual[strategy_annual.year.isin(recent_years)].net_pnl.sum()
+text(f'{int(ms.trades)}筆交易勝率{pct(ms.win_rate)}、PF {ratio(ms.profit_factor)}；持有日曆日平均{duration.mean():.2f}日、中位數{duration.median():.0f}日，最長{duration.max()}日。前五筆獲利合計占總淨利{pct(tr.nlargest(5,"pnl").pnl.sum()/ms.net_pnl)}；最近兩個曆年（{recent_years[0]}、{recent_years[-1]}）合計占總淨利{pct(recent_pnl/ms.net_pnl)}，仍需注意少數交易及近期年份的影響。')
+parts=[]
+for r in splits[splits.series=='strategy'].itertuples():
+    parts.append(f'{r.period}淨利{money(r.net_pnl)}元、描述性Sharpe {ratio(r.Sharpe)}')
+negative_years=strategy_annual.loc[strategy_annual.net_pnl<0,'year'].astype(int).tolist()
+negative_years_text='、'.join(map(str,negative_years)) if negative_years else '無'
+text('；'.join(parts)+f'。年度虧損年份：{negative_years_text}。')
 page();title('7　風險來源與策略限制')
 sub('一、法人交易指標的解釋限制')
 text('本研究的交易強度衡量三大法人的當日淨成交流量，而非收盤後仍持有的未平倉部位。以多空交易總口數作為分母，可降低不同交易活躍程度對原始淨口數的影響；然而三類法人交易同時可能包含方向投資、股票與選擇權避險、套利及造市活動，因此公開彙總資料無法識別各機構的實際交易動機。[2]')
 text('20日平均用於降低單日成交流量雜訊，再以價格高於20日均線作為趨勢確認。回測中較高的Sharpe僅代表此規則在目前樣本中的歷史風險調整績效；由於策略採多單／空手架構，績效同時受到長期多頭趨勢與隔夜報酬影響，不能將全部成果歸因於法人資訊優勢。')
 text(f'固定一口Buy-and-Hold的MDD為{pct(mb.MDD_pct)}，高於策略的{pct(ms.MDD_pct)}，主要原因之一是基準幾乎全期持有，而策略只有658個日末持倉日。改用相同一口、相同持倉日與相同147段持有的位移對照後，代表路徑MDD為{pct(rm.MDD_pct)}，全部位移的中位數MDD為{pct(rm.MDD_pct_distribution_median)}。這表示「一口」只相同化單次口數，沒有自動相同化時間曝險或實現波動。')
+text(f'逐筆比對兩份法人來源共{source_audit["compared_rows"]:,}筆，其中{source_audit["differing_rows"]}筆在2026/07/06不同，造成{source_audit["affected_ma20_days"]}個交易日的Q20變化，但本樣本{source_audit["changed_signal_days"]}天訊號改變。歷史逐日初次發布快照與修訂軌跡未留存，故不能聲稱全期資料時點已獨立驗證。')
+text(f'近月未調整價格均線有換月價差敏感度：以前一日兩契約收盤重疊價差調整訊號後，{roll_audit["changed_signal_days"]}天訊號不同，診斷版淨利{money(roll_audit["adjusted_net_pnl"])}元、Sharpe {ratio(roll_audit["adjusted_Sharpe"])}；原版為{money(roll_audit["raw_net_pnl"])}元、{ratio(roll_audit["raw_Sharpe"])}。此比較只變更訊號，實際成交仍按原契約，不取代正式V04。')
+text(f'價格單獨策略按完整樣本事後配平至相同年波動的TX-equivalent為{price_vm.position_equivalent:.3f}，淨利{money(price_vm.net_pnl)}元、Sharpe {ratio(price_vm.Sharpe)}；V04為{money(ms.net_pnl)}元、{ratio(ms.Sharpe)}。這是風險尺度與曝險差異的描述，配平小數口不能直接交易，亦非樣本外證據。')
 sub('二、盤整與快速反轉環境')
-text('在盤整、急漲急跌或V形反轉環境中，20日平均具有滯後性，價格亦可能在MA20附近反覆穿越。當條件短暫失效後退出、再度成立後重新進場，可能造成追價、較低價格退出或錯失快速反彈。2024年基準為正報酬而策略為負，即顯示雙條件一致並不代表能捕捉所有上升行情。')
+text('在盤整、急漲急跌或V形反轉環境中，20日平均具有滯後性，價格亦可能在MA20附近反覆穿越。當條件短暫失效後退出、再度成立後重新進場，可能造成追價、較低價格退出或錯失快速反彈。雙條件一致仍可能漏接行情或反覆進出。')
 text('本回測未加入事後最佳化的固定點數停損。現有資料僅含日盤OHLC，缺乏完整夜盤價格路徑、委託排隊及極端行情成交資訊，因此若加入盤中觸價停損，將引入無法可靠驗證的成交假設。基準版本僅依訊號消退、轉倉與期末清算執行出場。')
 sub('三、隔夜跳空與流動性風險')
 text('本策略實際持有隔夜部位，因此海外市場、匯率與突發事件可能在臺指期日盤重新開市前改變價格。即使隔日日盤開盤已產生退出需求，仍須承受前一日收盤至下一交易日開盤的跳空風險；若開盤流動性不足，實際成交損失亦可能高於固定2點滑價假設。')
@@ -169,13 +197,14 @@ sub('一、績效結論')
 text(f'以{money(reference_capital)}元建立兩條權益曲線，逐日累加淨損益後，策略Sharpe為{ratio(ms.Sharpe)}、Calmar為{ratio(ms.Calmar)}，固定一口Buy-and-Hold為{ratio(mb.Sharpe)}與{ratio(mb.Calmar)}；策略MDD為{pct(ms.MDD_pct)}，基準為{pct(mb.MDD_pct)}。策略累積報酬{pct(ms.cumulative_return)}低於基準{pct(mb.cumulative_return)}。固定一口比較仍有持倉時間差異：策略持倉日約為基準三分之一。')
 text(f'一口等曝險位移對照的中位數Sharpe為{ratio(rm.Sharpe_distribution_median)}、MDD為{pct(rm.MDD_pct_distribution_median)}；最接近策略波動的代表路徑Sharpe為{ratio(rm.Sharpe)}、MDD為{pct(rm.MDD_pct)}。策略在本樣本仍顯示較佳風險效率，但位移診斷是事後統計控制，不是可部署的交易基準，也不能取代獨立樣本外驗證。')
 text('策略最長回撤期間為482個交易日，高於基準的366日，顯示較低回撤幅度不等同於較短的資金恢復時間。勝率約51.70%、Profit Factor約2.197，績效並非依賴高勝率，而較依賴部分趨勢延續期間的較大獲利；前五筆交易與近兩年績效占比較高，亦顯示成果存在集中性。')
+text(f'加權指數價格報酬為{pct(mi.cumulative_return)}、MDD {pct(mi.MDD_pct)}，但未含股息或追蹤成本，僅作市場參考。')
 sub('二、樣本選擇偏誤與驗證要求')
-text('本版本由18個候選規則比較後選出，並非在完全未觀察資料的情況下事先固定。因此，即使滑價敏感度與時間分組結果仍為正，也不能視為獨立樣本外證據。目前的Sharpe可能包含策略挑選造成的選擇偏誤，應在解讀績效時明確納入。')
+text(f'本策略由{candidate_count}個候選規則比較後選出，並非在完全未觀察資料的情況下事先固定。因此，即使滑價敏感度與時間分組結果仍為正，也不能視為獨立樣本外證據。目前的Sharpe可能包含策略挑選造成的選擇偏誤，應在解讀績效時明確納入。')
 text('後續驗證應先凍結20日交易強度、20日價格均線、零門檻及成本假設，再以未參與策略設計的新資料進行樣本外檢驗。若進一步測試結算日排除、均線參數或停損規則，應事前限定假說與參數範圍，並完整報告所有結果，以降低多重嘗試造成的偏誤。')
-text('綜合而言，法人交易強度與價格趨勢的雙條件策略具有規則簡單、交易邏輯可追溯及歷史風險效率較佳等特性，可作為後續研究候選。然而，現有證據不足以宣稱其具有穩定的樣本外超額報酬。若要提高結論可信度，應優先完成獨立樣本外驗證、夜盤與盤中風險評估，以及資料發布時點與歷史修訂的一致性檢查。')
+text('綜合而言，策略規則可追溯且歷史成本後報酬為正，但同期大盤與TX買進持有累積報酬均較高；V04主要呈現較少持倉及較低回撤，未能據此認定法人訊號創造穩定超額報酬。仍須完成獨立樣本外驗證、夜盤與盤中風險及資料發布時點檢查。')
 sub('三、資料來源與計算口徑')
-text('[1] 臺灣期貨交易所，臺股期貨契約規格：https://www.taifex.com.tw/cht/2/tX\n[2] 臺灣期貨交易所，三大法人交易資訊：https://www.taifex.com.tw/cht/3/futContractsDateView\n[3] 臺灣期貨交易所，費率表：https://www.taifex.com.tw/cht/4/feeSchedules\n歷史行情：https://www.taifex.com.tw/cht/3/dlFutDailyMarketView\nFinMind：https://finmind.github.io/tutor/TaiwanMarket/Derivative/','small')
-text('Sharpe＝日報酬平均／日報酬樣本標準差×√252；Calmar＝CAGR／最大回撤比例。全部權益曲線以首日一口TX開盤名目價值起算，MDD取曲線相對歷史高點的最大跌幅；一口等曝險位移作風險尺度診斷。','small')
+text('[1] 臺灣期貨交易所，臺股期貨契約規格：https://www.taifex.com.tw/cht/2/tX\n[2] 臺灣期貨交易所，三大法人交易資訊：https://www.taifex.com.tw/cht/3/futContractsDateView\n[3] 臺灣期貨交易所，費率表：https://www.taifex.com.tw/cht/4/feeSchedules\n歷史行情：https://www.taifex.com.tw/cht/3/dlFutDailyMarketView\nFinMind：https://finmind.github.io/tutor/TaiwanMarket/Derivative/\n加權指數：臺灣證券交易所每日市場成交資訊與發行量加權股價指數歷史資料，來源與雜湊見source_audits/taiex_sources.json。','small')
+text('Sharpe＝日報酬平均／日報酬樣本標準差×√252；Calmar＝CAGR／最大回撤比例。權益曲線以首日一口TX開盤名目價值起算，逐日累加淨損益，MDD取曲線相對歷史高點的最大跌幅；一口等曝險位移作風險尺度診斷。','small')
 pages.append(current.copy())
 cmap=FontToolsFont(B/'chinese_font.ttf').getBestCmap();missing=sorted(set(ch for t in texts for ch in t if not ch.isspace() and ord(ch) not in cmap))
 assert not missing,missing

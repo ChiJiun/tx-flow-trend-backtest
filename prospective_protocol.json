@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "frozen_on": "2026-10-05",
+  "baseline": "regression_baseline.json",
+  "selection_status": "18 candidates examined before freeze; 2018-08-31 through 2026-10-05 is exploratory, never OOS",
+  "future_first_session_after": "2026-10-05",
+  "minimum_future_sessions": 252,
+  "rule": "Frozen V04: Q20 > 0 and unadjusted near-month close > MA20; execute next regular-session open, one TX long or cash",
+  "capital": 10000000,
+  "costs": {"fee_per_leg": 50, "tax_rate": 0.00002, "slippage_points_per_leg": 2},
+  "primary_success_criteria": {
+    "after_cost_net_pnl_gt": 0,
+    "sharpe_gt": 0,
+    "max_drawdown_pct_lte": 0.10
+  },
+  "comparison": "Fixed one-contract Buy-and-Hold with identical rolls and costs; report unmatched exposure and post-hoc volatility matched diagnostic separately",
+  "data_policy": "Append new dated source snapshots without overwriting frozen inputs. Save retrieval and first publication timestamps when available; report unknown publication histories. Do not tune rule or threshold after seeing future outcomes.",
+  "status": "awaiting 252 genuinely future sessions and archived point-in-time source snapshots"
+}

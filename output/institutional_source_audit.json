@@ -1,0 +1,12 @@
+{
+  "compared_rows": 6090,
+  "differing_rows": 2,
+  "differing_dates": [
+    "2026-07-06"
+  ],
+  "affected_ma20_days": 20,
+  "changed_signal_days": 0,
+  "changed_execution_targets": 0,
+  "source_availability": "Regular-session volume is generally published after close; exact historical first-release snapshots/revisions are unavailable.",
+  "point_in_time_verified": false
+}
