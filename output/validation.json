@@ -13,7 +13,8 @@
   "strategy_rolls": 37,
   "benchmark_rolls": 97,
   "parameters": {
-    "capital": 10000000.0,
+    "reference_capital": 2195000.0,
+    "reference_capital_basis": "first benchmark entry raw open price times contract multiplier",
     "multiplier": 200.0,
     "fee_per_leg": 50.0,
     "tax_rate": 2e-05,
