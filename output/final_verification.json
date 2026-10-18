@@ -10,18 +10,5 @@
     "executions": 196,
     "net_pnl": 8268352.664,
     "final_equity": 10463352.663999997
-  },
-  "one_contract_risk_matched_benchmark": {
-    "days": 1968,
-    "position_contracts": 1,
-    "integer_contracts_only": true,
-    "exposure_days": 658,
-    "trades": 147,
-    "eligible_shifts": 167,
-    "selected_shift_trading_days": 392,
-    "annual_volatility": 0.11051846295737536,
-    "target_annual_volatility": 0.0884166547109185,
-    "final_equity": 6396272.415999996,
-    "directly_tradable": false
   }
 }

@@ -5,6 +5,7 @@ from regression_baseline import verify_regression_baseline
 from validate_inputs import validate
 from audit_diagnostics import diagnostics
 from market_normalized import build as build_market_normalized
+from event_windows import build as build_event_windows
 BASE=Path(__file__).resolve().parent; OUT=BASE/'output'; OUT.mkdir(exist_ok=True)
 validate()
 MULT=200.; FEE=50.; TAX=.00002; SLIP=2.
@@ -222,69 +223,6 @@ def run(c,persist=True):
     return m,pd.DataFrame(annual)
 
 
-def one_contract_risk_matched_benchmark(base_config,strategy_metrics):
-    """以整口TX與相同曝險日／交易段數建立循環位移風險對照。
-
-    所有合格位移都保留原策略的0/1持倉群聚形狀，且不使用分數口數。代表路徑只按
-    年化波動與策略的距離挑選，不看報酬；完整分布另行輸出，避免只呈現單一路徑。
-    """
-    base=np.asarray(base_config['target'].astype(int),dtype=int)
-    rows=[];eligible=0;insolvent=0;high_overlap_excluded=0;nearby_shift_excluded=0
-    candidate_shifts=np.unique(np.linspace(1,len(base)-1,257,dtype=int))
-    for shift in candidate_shifts:
-        if min(int(shift),len(base)-int(shift))<63:
-            nearby_shift_excluded+=1
-            continue
-        shifted=np.roll(base,shift)
-        exposure_days=int(shifted.sum())
-        episodes=int(((shifted==1)&(np.r_[0,shifted[:-1]]==0)).sum())
-        if shifted[-1]!=0 or exposure_days!=strategy_metrics['exposure_days'] or episodes!=strategy_metrics['trades']:
-            continue
-        overlap_share=float(np.logical_and(shifted==1,base==1).sum()/strategy_metrics['exposure_days'])
-        if overlap_share>.5:
-            high_overlap_excluded+=1
-            continue
-        eligible+=1
-        target=pd.Series(shifted,index=main_dates,dtype=int)
-        cfg=dict(base_config,code=f'risk_shift_{shift}',name='一口等曝險循環位移對照',target=target)
-        try:mm,_=run(cfg,persist=False)
-        except AssertionError:
-            insolvent+=1
-            continue
-        if mm['exposure_days']!=strategy_metrics['exposure_days'] or mm['trades']!=strategy_metrics['trades']:
-            continue
-        mm['circular_shift_trading_days']=shift
-        mm['position_overlap_share']=overlap_share
-        rows.append(mm)
-    dist=pd.DataFrame(rows)
-    if dist.empty:raise ValueError('no eligible one-contract circular-shift benchmark paths')
-    dist['annual_volatility_gap']=(dist.annual_volatility-strategy_metrics['annual_volatility']).abs()
-    selected=dist.sort_values(['annual_volatility_gap','circular_shift_trading_days']).iloc[0]
-    shift=int(selected.circular_shift_trading_days)
-    target=pd.Series(np.roll(base,shift),index=main_dates,dtype=int)
-    cfg=dict(base_config,code='one_contract_risk_matched',name='一口等曝險風險配平對照',target=target)
-    selected_metrics,_=run(cfg,persist=True)
-    daily=pd.read_csv(OUT/'one_contract_risk_matched_daily.csv',parse_dates=['date','signal_date'])
-    daily['circular_shift_trading_days']=shift
-    summary=dict(selected_metrics)
-    summary.update(series='一口等曝險風險配平對照',matching_scope='deterministic evenly spaced circular shifts with equal one-contract exposure days and episode count',
-        directly_tradable=False,integer_contracts_only=True,position_contracts=1,cost_treatment='actual one-contract fees, tax and slippage for every leg',
-        selection_rule='closest annual volatility to strategy; return not used',selected_shift_trading_days=shift,candidate_shifts=len(candidate_shifts),eligible_shifts=eligible,
-        nearby_shift_excluded=nearby_shift_excluded,minimum_circular_shift_trading_days=63,
-        high_overlap_excluded=high_overlap_excluded,maximum_position_overlap_share=.5,selected_position_overlap_share=float(selected.position_overlap_share),
-        solvent_shifts=len(dist),insolvent_shifts=insolvent,insolvent_shift_share=insolvent/eligible,
-        target_annual_volatility=strategy_metrics['annual_volatility'],strategy_exposure_days=strategy_metrics['exposure_days'],strategy_trades=strategy_metrics['trades'])
-    for key in ['cumulative_return','CAGR','Sharpe','Calmar','MDD_pct','MDD_amount','annual_volatility','net_pnl','cost_total']:
-        summary[f'{key}_distribution_p05']=dist[key].quantile(.05)
-        summary[f'{key}_distribution_median']=dist[key].median()
-        summary[f'{key}_distribution_p95']=dist[key].quantile(.95)
-    summary['share_of_shifts_with_sharpe_below_strategy']=(dist.Sharpe<strategy_metrics['Sharpe']).mean()
-    summary['share_of_shifts_with_cagr_below_strategy']=(dist.CAGR<strategy_metrics['CAGR']).mean()
-    summary['share_of_shifts_with_mdd_at_least_strategy']=(dist.MDD_pct>=strategy_metrics['MDD_pct']).mean()
-    return daily,pd.DataFrame([summary]),dist
-
-
-
 # 重跑基準並以它的提前轉倉路徑安排策略持有契約；不是讀取預先算好的基準損益。
 main=p[p.date.between(START,END)].copy()
 bh,events,contract_trades=benchmark(main)
@@ -299,10 +237,6 @@ strategy_events=pd.read_csv(OUT/'V04_events.csv')
 m['annual_volatility']=strategy_daily.daily_return.std(ddof=1)*np.sqrt(252)
 m.update(fee=strategy_daily.fee.sum(),tax=strategy_daily.tax.sum(),slippage_cost=strategy_daily.slippage_cost.sum())
 mb=metrics(bh,contract_trades)
-risk_daily,risk_summary_df,risk_distribution=one_contract_risk_matched_benchmark(c,m)
-risk_summary=risk_summary_df.iloc[0]
-assert risk_summary['position_contracts']==1 and bool(risk_summary['integer_contracts_only'])
-assert risk_summary['exposure_days']==m['exposure_days'] and risk_summary['trades']==m['trades']
 comparison=pd.DataFrame([dict(m),dict(series='Buy-and-Hold近月多單',**mb)])
 annual=[ann.assign(series='strategy')]
 for year,z in bh.groupby(bh.date.dt.year):
@@ -330,6 +264,8 @@ for name,df in [('strategy',strategy_daily),('benchmark',bh)]:
     for label,mask in [('2018–2022',df.date.dt.year<=2022),('2023–2026',df.date.dt.year>=2023)]:
         z=df[mask];splits.append(dict(series=name,period=label,net_pnl=z.pnl.sum(),Sharpe=z.daily_return.mean()/z.daily_return.std(ddof=1)*np.sqrt(252)))
 splits=pd.DataFrame(splits)
+# 特殊期間（急跌／跳空）事後描述：只讀取既有逐日底稿，不回饋到規則或參數。
+event_windows=build_event_windows(strategy_daily,bh,p,lookup)
 # 將前一日特徵附在交易日底稿，方便逐筆核對訊號時序。
 features=x[['institution_net_trade_qty','institution_total_trade_qty','trade_intensity','intensity_ma20','close','price_ma20','buy_condition']].reset_index()
 features=features.rename(columns={'date':'signal_date','close':'signal_close'})
@@ -346,8 +282,7 @@ verify_regression_baseline(dict(period=period,parameters=parameters,input_sha256
 frames={'metrics_comparison':comparison,'strategy_daily':strategy_daily,'strategy_trades':strategy_trades,
     'strategy_events':strategy_events,'strategy_contract_segments':pd.read_csv(OUT/'V04_contract_segments.csv'),
     'benchmark_daily':bh,'benchmark_events':events,'benchmark_contract_trades':contract_trades,
-    'one_contract_risk_matched_summary':risk_summary_df,'one_contract_risk_matched_daily':risk_daily,'one_contract_risk_matched_distribution':risk_distribution,
-    'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'indicator_features':x.reset_index(),
+    'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'event_windows':event_windows,'indicator_features':x.reset_index(),
     'flow_incremental_attribution':flow_attribution,'price_only_volatility_matched_summary':pd.DataFrame([price_vm])}
 for name,df in frames.items():df.to_csv(OUT/(name+'.csv'),index=False,encoding='utf-8-sig')
 market_summary=build_market_normalized()
@@ -355,7 +290,8 @@ frames['market_normalized_summary']=market_summary
 frames['market_normalized_daily']=pd.read_csv(OUT/'market_normalized_daily.csv')
 buf=io.BytesIO()
 with pd.ExcelWriter(buf,engine='openpyxl') as w:
-    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','一口風險配平_摘要','一口風險配平_逐日','一口風險配平_位移分布','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','全部指標特徵','法人濾網增量歸因','價格單獨波動配平','同曝險大盤比較摘要','同曝險大盤比較逐日']
+    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','特殊期間_事後描述','全部指標特徵','法人濾網增量歸因','價格單獨波動配平','同曝險大盤比較摘要','同曝險大盤比較逐日']
+    assert len(labels)==len(frames)
     for (name,df),label in zip(frames.items(),labels):
         df.to_excel(w,sheet_name=label,index=False);ws=w.sheets[label];ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
         for col in ws.columns:ws.column_dimensions[col[0].column_letter].width=max(14,min(34,len(str(col[0].value))+2))
@@ -372,12 +308,7 @@ validation=dict(period=period,days=len(main),selected_from_prior_18_candidates=T
 (OUT/'validation.json').write_text(json.dumps(validation,ensure_ascii=False,indent=2))
 final_verification=dict(
     strategy=dict(days=len(strategy_daily),executions=len(strategy_events),net_pnl=float(m['net_pnl']),final_equity=float(m['final_equity'])),
-    benchmark=dict(days=len(bh),executions=len(events),net_pnl=float(mb['net_pnl']),final_equity=float(mb['final_equity'])),
-    one_contract_risk_matched_benchmark=dict(days=len(risk_daily),position_contracts=1,integer_contracts_only=True,
-        exposure_days=int(risk_summary['exposure_days']),trades=int(risk_summary['trades']),eligible_shifts=int(risk_summary['eligible_shifts']),
-        selected_shift_trading_days=int(risk_summary['selected_shift_trading_days']),annual_volatility=float(risk_summary['annual_volatility']),
-        target_annual_volatility=float(risk_summary['target_annual_volatility']),final_equity=float(risk_summary['final_equity']),directly_tradable=False))
+    benchmark=dict(days=len(bh),executions=len(events),net_pnl=float(mb['net_pnl']),final_equity=float(mb['final_equity'])))
 (OUT/'final_verification.json').write_text(json.dumps(final_verification,ensure_ascii=False,indent=2))
 print(comparison[['series','cumulative_return','CAGR','Sharpe','Calmar','MDD_pct','MDD_amount','trades','win_rate','profit_factor','cost_total']].to_string(index=False))
-print('一口風險配平診斷：',risk_summary_df[['position_contracts','exposure_days','trades','eligible_shifts','selected_shift_trading_days','annual_volatility','CAGR','Sharpe','Calmar','MDD_pct','cost_total']].to_string(index=False))
 print('消融診斷：',ablation[['series','Sharpe','cumulative_return','MDD_pct']].to_string(index=False))
