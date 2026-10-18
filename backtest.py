@@ -6,6 +6,7 @@ from validate_inputs import validate
 from audit_diagnostics import diagnostics
 from market_normalized import build as build_market_normalized
 from event_windows import build as build_event_windows
+from robustness import extra_risk_metrics, bootstrap_summary, signal_return_table, monthly_returns, grid_summary
 BASE=Path(__file__).resolve().parent; OUT=BASE/'output'; OUT.mkdir(exist_ok=True)
 validate()
 MULT=200.; FEE=50.; TAX=.00002; SLIP=2.
@@ -122,7 +123,8 @@ def metrics(df,tr):
                 win_rate=float((tr.pnl>0).mean()),profit_factor=win/loss if loss else None,MDD_amount=-df.drawdown_amount.min(),
                 MDD_pct=mdd,longest_drawdown_trading_days=longest,longest_drawdown_calendar_days=cal,
                 Sharpe=df.daily_return.mean()/df.daily_return.std(ddof=1)*np.sqrt(252),Calmar=cagr/mdd if mdd else None,
-                annual_volatility=df.daily_return.std(ddof=1)*np.sqrt(252),fee=df.fee.sum(),tax=df.tax.sum(),slippage_cost=df.slippage_cost.sum())
+                annual_volatility=df.daily_return.std(ddof=1)*np.sqrt(252),fee=df.fee.sum(),tax=df.tax.sum(),slippage_cost=df.slippage_cost.sum(),
+                **extra_risk_metrics(df.daily_return))
 
 
 def volatility_matched_benchmark(df,target_annual_volatility):
@@ -159,7 +161,7 @@ def volatility_matched_benchmark(df,target_annual_volatility):
     return d,summary
 
 
-def run(c,persist=True):
+def run(c,persist=True,return_daily=False):
     position=0;held=None;previous=None;equity=CAPITAL;episode=0;segment=0;rows=[];events=[];segments=[]
     def leg(date,con,side,raw,reason):
         ex=raw+side*SLIP;e=dict(date=date,contract=con,side='buy' if side==1 else 'sell',raw_price=raw,execution_price=ex,
@@ -214,12 +216,13 @@ def run(c,persist=True):
         MDD_pct=mdd,MDD_amount=-d.drawdown_amount.min(),trades=len(tr),win_rate=(tr.pnl>0).mean(),profit_factor=gain/loss if loss else np.nan,
         net_pnl=d.pnl.sum(),final_equity=equity,gross_pnl=d.gross_pnl.sum(),cost_total=d.cost.sum(),rolls=int(d['roll'].sum()),capital_skips=int(d.capital_skip.sum()),
         longest_drawdown_trading_days=longest,longest_drawdown_calendar_days=cal,exposure_days=int((d.position_after!=0).sum()),
-        annual_volatility=d.daily_return.std(ddof=1)*np.sqrt(252))
+        annual_volatility=d.daily_return.std(ddof=1)*np.sqrt(252),**extra_risk_metrics(d.daily_return))
     if persist:
         d.to_csv(OUT/f'{c["code"]}_daily.csv',index=False,encoding='utf-8-sig');ev.to_csv(OUT/f'{c["code"]}_events.csv',index=False,encoding='utf-8-sig');tr.to_csv(OUT/f'{c["code"]}_trades.csv',index=False,encoding='utf-8-sig')
         seg.to_csv(OUT/f'{c["code"]}_contract_segments.csv',index=False,encoding='utf-8-sig')
     annual=[]
     for year,g in d.groupby(d.date.dt.year):annual.append(dict(code=c['code'],year=year,net_pnl=g.pnl.sum(),annual_return=g.equity.iloc[-1]/(g.equity.iloc[0]-g.pnl.iloc[0])-1))
+    if return_daily:return m,pd.DataFrame(annual),d
     return m,pd.DataFrame(annual)
 
 
@@ -266,6 +269,55 @@ for name,df in [('strategy',strategy_daily),('benchmark',bh)]:
 splits=pd.DataFrame(splits)
 # 特殊期間（急跌／跳空）事後描述：只讀取既有逐日底稿，不回饋到規則或參數。
 event_windows=build_event_windows(strategy_daily,bh,p,lookup)
+# ---- 穩健性與統計推論（全部為事後診斷；規則與參數維持20/20、零門檻）----
+def half_sharpe(d,first):
+    z=d[d.date.dt.year<=2022] if first else d[d.date.dt.year>=2023]
+    return float(z.daily_return.mean()/z.daily_return.std(ddof=1)*np.sqrt(252))
+# (1) 參數格點：交易強度視窗 × 價格均線視窗；同成本、同轉倉、同帳務。
+WINDOWS=[10,15,20,30,40,60];grid=[]
+for wi in WINDOWS:
+    for wp in WINDOWS:
+        cond=(x.trade_intensity.rolling(wi,min_periods=wi).mean()>0)&(x.close>x.close.rolling(wp,min_periods=wp).mean())
+        tgt=cond.astype(int).shift(1).reindex(main_dates);assert tgt.notna().all()
+        gm,_,gd=run(dict(c,code=f'grid_{wi}_{wp}',name=f'強度{wi}日＋價格{wp}日',rule=f'強度MA{wi}>0且近月收盤>價格MA{wp}；隔日開盤多單/空手',target=tgt),persist=False,return_daily=True)
+        grid.append(dict(intensity_window=wi,price_window=wp,trades=gm['trades'],exposure_days=gm['exposure_days'],cumulative_return=gm['cumulative_return'],CAGR=gm['CAGR'],
+            Sharpe=gm['Sharpe'],Calmar=gm['Calmar'],MDD_pct=gm['MDD_pct'],net_pnl=gm['net_pnl'],profit_factor=gm['profit_factor'],win_rate=gm['win_rate'],
+            Sharpe_first_half=half_sharpe(gd,True),Sharpe_second_half=half_sharpe(gd,False)))
+grid=pd.DataFrame(grid)
+assert np.isclose(grid.set_index(['intensity_window','price_window']).loc[(20,20),'net_pnl'],m['net_pnl'])
+grid_stats=grid_summary(grid)
+# (2) 替代執行設定：延遲一日（t+2開盤）、提前兩日換倉、全部成本×1.5／×2。
+scenarios=[dict(scenario='基準設定（滑價2點、每邊50元）',**{k:m[k] for k in ['trades','cumulative_return','Sharpe','MDD_pct','longest_drawdown_trading_days','net_pnl','exposure_days']})]
+delay_target=x.buy_condition.astype(int).shift(2).reindex(main_dates);assert delay_target.notna().all()
+md,_=run(dict(c,code='delay_one_day',name='延遲一日執行',rule='訊號延後一日：t+2開盤執行',target=delay_target),persist=False)
+scenarios.append(dict(scenario='延遲一日執行（t+2日開盤）',**{k:md[k] for k in ['trades','cumulative_return','Sharpe','MDD_pct','longest_drawdown_trading_days','net_pnl','exposure_days']}))
+_roll_backup,_schedule_backup=roll_dates,schedule
+roll_dates={con:calendar[calendar.index(ed)-2] for con,ed in expiry.items() if ed in calendar and calendar.index(ed)>1 and con[2:]<END.strftime('%Y%m')}
+bh_roll2,_,tr_roll2=benchmark(main);schedule=bh_roll2.set_index('date')
+mr2,_=run(dict(c,code='roll_two_days_before'),persist=False)
+scenarios.append(dict(scenario='提前兩日換倉（策略與基準同步）',**{k:mr2[k] for k in ['trades','cumulative_return','Sharpe','MDD_pct','longest_drawdown_trading_days','net_pnl','exposure_days']},benchmark_Sharpe=metrics(bh_roll2,tr_roll2)['Sharpe']))
+roll_dates,schedule=_roll_backup,_schedule_backup
+for mult in [1.5,2.0]:
+    FEE,SLIP,TAX=50.*mult,2.*mult,.00002*mult
+    mc,_=run(dict(c,code=f'cost_x{mult:g}'),persist=False)
+    scenarios.append(dict(scenario=f'全部成本×{mult:g}（{FEE:g}元、{SLIP:g}點、稅×{mult:g}）',**{k:mc[k] for k in ['trades','cumulative_return','Sharpe','MDD_pct','longest_drawdown_trading_days','net_pnl','exposure_days']}))
+FEE,SLIP,TAX=50.,2.,.00002
+alt_roll=pd.read_csv(OUT/'roll_adjusted_diagnostic_daily.csv',parse_dates=['date']);alt_trades=pd.read_csv(OUT/'roll_adjusted_diagnostic_trades.csv')
+_run_len=0;_longest=0
+for v in alt_roll.drawdown_pct:
+    _run_len=_run_len+1 if v<-1e-12 else 0;_longest=max(_longest,_run_len)
+scenarios.append(dict(scenario=f'換月價差調整訊號（{roll_audit["changed_signal_days"]}天不同）',trades=len(alt_trades),cumulative_return=alt_roll.equity.iloc[-1]/CAPITAL-1,
+    Sharpe=roll_audit['adjusted_Sharpe'],MDD_pct=-alt_roll.drawdown_pct.min(),longest_drawdown_trading_days=_longest,net_pnl=roll_audit['adjusted_net_pnl'],exposure_days=int((alt_roll.position_after!=0).sum())))
+scenarios.append(dict(scenario=f'替代法人來源FinMind（{provider_audit["changed_signal_days"]}天不同）',**{k:m[k] for k in ['trades','cumulative_return','Sharpe','MDD_pct','longest_drawdown_trading_days','net_pnl','exposure_days']}))
+scenarios=pd.DataFrame(scenarios)
+# (3) 統計推論：區塊 bootstrap 的 Sharpe 信賴區間、訊號分位與條件次日報酬、月報酬。
+bootstrap=pd.DataFrame([bootstrap_summary('strategy',strategy_daily.daily_return),bootstrap_summary('benchmark',bh.daily_return),
+    bootstrap_summary('price_only',pd.read_csv(OUT/'price_only_daily.csv').daily_return)])
+signal_table=signal_return_table(x,p,lookup,main_dates)
+signal_stats=dict(welch_t_flow_given_trend=signal_table.attrs['welch_t_flow_given_trend'],flow_increment_given_trend_bp=signal_table.attrs['flow_increment_given_trend_bp'])
+monthly=monthly_returns(strategy_daily,bh,CAPITAL)
+robustness_summary=dict(grid=grid_stats,signal=signal_stats,bootstrap=bootstrap.set_index('series')[['Sharpe','Sharpe_ci_low','Sharpe_ci_high','prob_Sharpe_le_0','t_stat_mean_daily_return']].to_dict('index'))
+(OUT/'robustness_summary.json').write_text(json.dumps(robustness_summary,ensure_ascii=False,indent=2,default=float),encoding='utf-8')
 # 將前一日特徵附在交易日底稿，方便逐筆核對訊號時序。
 features=x[['institution_net_trade_qty','institution_total_trade_qty','trade_intensity','intensity_ma20','close','price_ma20','buy_condition']].reset_index()
 features=features.rename(columns={'date':'signal_date','close':'signal_close'})
@@ -282,7 +334,8 @@ verify_regression_baseline(dict(period=period,parameters=parameters,input_sha256
 frames={'metrics_comparison':comparison,'strategy_daily':strategy_daily,'strategy_trades':strategy_trades,
     'strategy_events':strategy_events,'strategy_contract_segments':pd.read_csv(OUT/'V04_contract_segments.csv'),
     'benchmark_daily':bh,'benchmark_events':events,'benchmark_contract_trades':contract_trades,
-    'annual_results':annual,'cost_sensitivity':sensitivity,'ablation':ablation,'descriptive_time_splits':splits,'event_windows':event_windows,'indicator_features':x.reset_index(),
+    'annual_results':annual,'monthly_returns':monthly,'cost_sensitivity':sensitivity,'robustness_scenarios':scenarios,'parameter_grid':grid,'bootstrap_inference':bootstrap,
+    'signal_quantile_returns':signal_table,'ablation':ablation,'descriptive_time_splits':splits,'event_windows':event_windows,'indicator_features':x.reset_index(),
     'flow_incremental_attribution':flow_attribution,'price_only_volatility_matched_summary':pd.DataFrame([price_vm])}
 for name,df in frames.items():df.to_csv(OUT/(name+'.csv'),index=False,encoding='utf-8-sig')
 market_summary=build_market_normalized()
@@ -290,7 +343,7 @@ frames['market_normalized_summary']=market_summary
 frames['market_normalized_daily']=pd.read_csv(OUT/'market_normalized_daily.csv')
 buf=io.BytesIO()
 with pd.ExcelWriter(buf,engine='openpyxl') as w:
-    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','年度結果','滑價敏感度','條件消融_事後診斷','時間分組_非樣本外','特殊期間_事後描述','全部指標特徵','法人濾網增量歸因','價格單獨波動配平','同曝險大盤比較摘要','同曝險大盤比較逐日']
+    labels=['指標比較','策略逐日含昨日訊號','策略完整交易','策略成交與轉倉','策略契約段損益','基準逐日','基準成交與轉倉','基準契約段損益','年度結果','月報酬','滑價敏感度','穩健性情境','參數格點','統計推論_bootstrap','訊號分位次日報酬','條件消融_事後診斷','時間分組_非樣本外','特殊期間_事後描述','全部指標特徵','法人濾網增量歸因','價格單獨波動配平','同曝險大盤比較摘要','同曝險大盤比較逐日']
     assert len(labels)==len(frames)
     for (name,df),label in zip(frames.items(),labels):
         df.to_excel(w,sheet_name=label,index=False);ws=w.sheets[label];ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions

@@ -109,6 +109,28 @@ ax1.set_title('原始盤後指標與價格：三大法人交易強度Q、Q20與T
 for ax in (ax1,ax2):ax.grid(alpha=.18);ax.spines[['top','right']].set_visible(False);ax.tick_params(labelsize=7.5)
 ax2.set_xlim(s.date.min(),s.date.max());fig.tight_layout();fig.savefig(O/'indicator_timeseries.png',dpi=200);plt.close(fig)
 ew=read('event_windows')
+scen=read('robustness_scenarios');grid=read('parameter_grid');boot=read('bootstrap_inference').set_index('series');sig=read('signal_quantile_returns')
+rob=json.loads((O/'robustness_summary.json').read_text(encoding='utf-8'))
+# 參數格點熱圖（全樣本Sharpe）與前後期Sharpe散佈：檢查20/20是否為孤立峰值。
+W=sorted(grid.intensity_window.unique());mat=grid.pivot(index='intensity_window',columns='price_window',values='Sharpe').loc[W,W]
+fig,(ax1,ax2)=plt.subplots(1,2,figsize=(9.4,3.35),gridspec_kw=dict(width_ratios=[1.15,1]))
+im=ax1.imshow(mat.to_numpy(),cmap='Blues',vmin=min(0,mat.min().min()),vmax=mat.max().max(),aspect='auto')
+ax1.set_xticks(range(len(W)));ax1.set_xticklabels(W,fontsize=8);ax1.set_yticks(range(len(W)));ax1.set_yticklabels(W,fontsize=8)
+ax1.set_xlabel('價格均線視窗（日）',fontproperties=small_font);ax1.set_ylabel('交易強度平均視窗（日）',fontproperties=small_font)
+for i,wi in enumerate(W):
+    for j,wp in enumerate(W):
+        val=mat.loc[wi,wp];ax1.text(j,i,f'{val:.2f}',ha='center',va='center',fontsize=7,color='white' if val>mat.max().max()*.65 else '#1f2f38',fontweight='bold' if (wi,wp)==(20,20) else 'normal')
+ax1.add_patch(plt.Rectangle((W.index(20)-.5,W.index(20)-.5),1,1,fill=False,ec='#ce7c2e',lw=1.8))
+ax1.set_title('全樣本成本後Sharpe（36組參數）',fontproperties=small_font)
+base_grid=grid[(grid.intensity_window==20)&(grid.price_window==20)].iloc[0]
+ax2.scatter(grid.Sharpe_first_half,grid.Sharpe_second_half,s=18,color='#146f91',alpha=.75,label='其他參數組')
+ax2.scatter([base_grid.Sharpe_first_half],[base_grid.Sharpe_second_half],s=60,color='#ce7c2e',edgecolor='k',zorder=3,label='20/20（正式策略）')
+lim=[min(grid.Sharpe_first_half.min(),grid.Sharpe_second_half.min())-.1,max(grid.Sharpe_first_half.max(),grid.Sharpe_second_half.max())+.1]
+ax2.plot(lim,lim,color='gray',lw=.7,ls=':');ax2.set_xlim(lim);ax2.set_ylim(lim)
+ax2.set_xlabel('2018–2022 Sharpe',fontproperties=small_font);ax2.set_ylabel('2023–2026 Sharpe',fontproperties=small_font)
+ax2.set_title(f'前後期Sharpe（Spearman ρ={rob["grid"]["spearman_first_vs_second_half"]:.2f}）',fontproperties=small_font)
+ax2.legend(prop=small_font,frameon=False,loc='lower right');ax2.grid(alpha=.18);ax2.spines[['top','right']].set_visible(False);ax2.tick_params(labelsize=7.5)
+fig.tight_layout();fig.savefig(O/'parameter_grid.png',dpi=200);plt.close(fig)
 
 pdfmetrics.registerFont(TTFont('TC',str(B/'chinese_font.ttf')))
 styles={
@@ -149,7 +171,7 @@ def table(rows,widths=None,style='cell'):
     for row in rows:
         cells=tab.add_row().cells
         for cell,val in zip(cells,row):cell.text=str(val)
-def image(name):story.append(Image(str(O/name),width=505,height=202));doc.add_picture(str(O/name),width=Cm(17))
+def image(name,height=202):story.append(Image(str(O/name),width=505,height=height));doc.add_picture(str(O/name),width=Cm(17))
 def image_pair(left,right):
     story.append(Table([[Image(str(O/left),width=245,height=98),Image(str(O/right),width=245,height=98)]],colWidths=[252,252]))
     tab=doc.add_table(rows=1,cols=2)
@@ -182,9 +204,10 @@ text('持有日損益按同一實際契約今日收盤減昨日評價價；退�
 text(f'策略147筆完整方向交易、37次轉倉、368個成交腿；基準98段契約交易、97次轉倉、196個成交腿。策略總成本{money(ms.cost_total)}元，基準{money(mb.cost_total)}元。逐日損益、方向交易及實際契約分段損益皆獨立核對一致。')
 page();title('肆、績效分析：量化指標與年度比較')
 rows=[['成本後指標','法人交易強度＋趨勢','Buy-and-Hold基準']]
-for label,key,fmt in [('累積總報酬','cumulative_return',pct),('CAGR','CAGR',pct),('期末資金（元）','final_equity',money),('交易次數／段數','trades',lambda z:str(int(z))),('勝率','win_rate',pct),('Profit Factor','profit_factor',ratio),('最大回撤（元）','MDD_amount',money),('最大回撤（%）','MDD_pct',pct),('最長回撤：交易日','longest_drawdown_trading_days',lambda z:str(int(z))),('最長回撤：日曆日','longest_drawdown_calendar_days',lambda z:str(int(z))),('Sharpe（rf=0）','Sharpe',ratio),('Calmar','Calmar',ratio),('年化波動','annual_volatility',pct),('全部成本（元）','cost_total',money)]:rows.append([label,fmt(ms[key]),fmt(mb[key])])
+for label,key,fmt in [('累積總報酬','cumulative_return',pct),('CAGR','CAGR',pct),('期末資金（元）','final_equity',money),('交易次數／段數','trades',lambda z:str(int(z))),('勝率','win_rate',pct),('Profit Factor','profit_factor',ratio),('最大回撤（元）','MDD_amount',money),('最大回撤（%）','MDD_pct',pct),('最長回撤：交易日','longest_drawdown_trading_days',lambda z:str(int(z))),('最長回撤：日曆日','longest_drawdown_calendar_days',lambda z:str(int(z))),('Sharpe（rf=0）','Sharpe',ratio),('Sortino（rf=0）','Sortino',ratio),('Calmar','Calmar',ratio),('年化波動','annual_volatility',pct),('日VaR 95%／ES 95%（歷史法）',None,None),('全部成本（元）','cost_total',money)]:
+    rows.append([label,f'{pct(ms.daily_VaR95)}／{pct(ms.daily_ES95)}',f'{pct(mb.daily_VaR95)}／{pct(mb.daily_ES95)}'] if key is None else [label,fmt(ms[key]),fmt(mb[key])])
 table(rows,[175,165,165])
-text('同期間、同一口、同起始資金。固定一口Buy-and-Hold是可直接執行的曝險比較；策略有658個日末持倉日，基準幾乎全期持有，兩者承擔市場風險的時間不同。MDD金額及比例各自取全期最大值，可能發生於不同日期。','small')
+text(f'同期間、同一口、同起始資金。固定一口Buy-and-Hold是可直接執行的曝險比較；策略有{int(ms.exposure_days)}個日末持倉日，基準幾乎全期持有，兩者承擔市場風險的時間不同。MDD金額及比例各自取全期最大值，可能發生於不同日期。VaR／ES為日淨報酬的歷史分位損失，含空手日；Sortino以下方半變異年化。','small')
 ar=[['年度','策略損益（元）','策略報酬','基準損益（元）','基準報酬']]
 for year,g in annual.groupby('year'):
     q=g[g.series=='strategy'].iloc[0];r=g[g.series=='benchmark'].iloc[0]
@@ -230,34 +253,35 @@ table(rows,[120,36,44,36,66,70,96,37],'cellsmall')
 flat_on_gap=int((ew.held_on_worst_gap_day==0).sum());worst_days=s.nsmallest(3,'pnl')
 worst_text='、'.join(f'{d.date:%Y/%m/%d}（{"進場日" if d.position_before==0 else "持倉日"}，{d.pnl:,.0f}元）' for d in worst_days.itertuples())
 text(f'事件日期以公開重大事件為起點、由行情日曆截取；末兩段以樣本內最深單日跳空由資料辨識，均未回饋到規則。{len(ew)}個視窗中{flat_on_gap}個在最深跳空日為空手：急跌前價格多已跌破MA20或Q20轉負而退出，策略是「不在場」而非預知事件，同一機制也使其在反彈初期缺席（錯過幅度與最差單日見伍）。','small')
+page();title('肆（續）參數穩健性、替代設定與統計推論')
+image('parameter_grid.png',168)
+g=rob['grid']
+text(f'圖四：左為交易強度視窗×價格均線視窗{g["grid_size"]}組參數的全樣本成本後Sharpe（橘框為20/20），右為各組在2018–2022與2023–2026的Sharpe。{g["grid_size"]}組中位數{g["grid_Sharpe_median"]:.2f}、最低{g["grid_Sharpe_min"]:.2f}、{pct(g["share_Sharpe_above_1"])}高於1、全部淨利為正；20/20排第{g["base_rank_by_Sharpe"]}，前後期{g["base_Sharpe_first_half"]:.2f}／{g["base_Sharpe_second_half"]:.2f}；若只用前期挑選會選{g["best_first_half_params"]}，其後期Sharpe {g["best_first_half_Sharpe_second_half"]:.2f}。格點不能消除18候選挑選偏誤，但顯示結果不依賴單一參數峰值。','small')
+sub('替代執行與成本設定（同一帳務與轉倉引擎）')
+rows=[['情境','交易次數','持倉日','累積報酬','Sharpe','MDD','最長回撤（交易日）']]
+for r in scen.itertuples():rows.append([r.scenario,int(r.trades),int(r.exposure_days),pct(r.cumulative_return),ratio(r.Sharpe),pct(r.MDD_pct),int(r.longest_drawdown_trading_days)])
+table(rows,[190,48,44,60,48,48,67],'cellsmall')
+sub('訊號與次日報酬：Q20分位與「趨勢×法人」條件（同契約收盤至次日收盤）')
+rows=[['訊號日分組','天數','次日平均報酬（bp）','中位數（bp）','勝率','t值']]
+for r in sig[sig.group!='全部訊號日'].itertuples():rows.append([r.group,int(r.days),f'{r.mean_next_day_return_bp:.1f}',f'{r.median_next_day_return_bp:.1f}',pct(r.hit_rate),f'{r.t_stat:.2f}'])
+table(rows,[185,50,80,65,55,70],'cellsmall')
+sg=rob['signal'];bs,bb,bp=boot.loc['strategy'],boot.loc['benchmark'],boot.loc['price_only']
+quintile_means=sig[sig.group.str.startswith('Q20')].mean_next_day_return_bp.to_numpy();quintile_monotone=bool(np.all(np.diff(quintile_means)>0))
+ci_overlap=bool(bs.Sharpe_ci_low<=max(bb.Sharpe_ci_high,bp.Sharpe_ci_high))
+text(f'收盤>MA20的訊號日中，Q20>0相對Q20≤0的次日平均報酬差{sg["flow_increment_given_trend_bp"]:+.1f} bp（Welch t={sg["welch_t_flow_given_trend"]:.2f}），是法人條件在趨勢濾網之上的增量證據；五分位報酬{"單調遞增" if quintile_monotone else "並非單調"}，零門檻是方向判斷而非強度分級。20日循環區塊bootstrap重抽{int(bs.n_boot):,}次：策略Sharpe 95%區間[{bs.Sharpe_ci_low:.2f}, {bs.Sharpe_ci_high:.2f}]、P(Sharpe≤0)={bs.prob_Sharpe_le_0:.4f}、日均報酬t={bs.t_stat_mean_daily_return:.2f}；固定一口基準[{bb.Sharpe_ci_low:.2f}, {bb.Sharpe_ci_high:.2f}]、價格單獨策略[{bp.Sharpe_ci_low:.2f}, {bp.Sharpe_ci_high:.2f}]。{"三者區間重疊，統計上不能宣稱策略Sharpe高於基準" if ci_overlap else "策略區間下限高於兩者上限"}；區間未校正候選挑選。','small')
 page();title('伍、策略極限與檢討')
 sub('一、法人交易指標的解釋限制')
-text('本研究的交易強度衡量三大法人的當日淨成交流量，而非收盤後仍持有的未平倉部位。以多空交易總口數作為分母，可降低不同交易活躍程度對原始淨口數的影響；然而三類法人交易同時可能包含方向投資、股票與選擇權避險、套利及造市活動，因此公開彙總資料無法識別各機構的實際交易動機。[2]')
-text('20日平均用於降低單日成交流量雜訊，再以價格高於20日均線作為趨勢確認。回測中較高的Sharpe僅代表此規則在目前樣本中的歷史風險調整績效；由於策略採多單／空手架構，績效同時受到長期多頭趨勢與隔夜報酬影響，不能將全部成果歸因於法人資訊優勢。')
-text(f'固定一口Buy-and-Hold的MDD {pct(mb.MDD_pct)}高於策略的{pct(ms.MDD_pct)}，但其年化波動{pct(mb.annual_volatility)}亦遠高於策略的{pct(ms.annual_volatility)}；縮放至約{rm["scale"]:.3f}口的配平基準Sharpe為{ratio(rm["Sharpe"])}、MDD為{pct(rm["MDD_pct"])}（見肆續表），這只控制風險尺度，小數口並非可直接交易的部位。')
-text(f'逐筆比對兩份法人來源共{source_audit["compared_rows"]:,}筆，其中{source_audit["differing_rows"]}筆在2026/07/06不同，造成{source_audit["affected_ma20_days"]}個交易日的Q20變化，但本樣本{source_audit["changed_signal_days"]}天訊號改變。歷史逐日初次發布快照與修訂軌跡未留存，故不能聲稱全期資料時點已獨立驗證。')
-text(f'近月未調整價格均線有換月價差敏感度：以前一日兩契約收盤重疊價差調整訊號後，{roll_audit["changed_signal_days"]}天訊號不同，淨利{money(roll_audit["adjusted_net_pnl"])}元、Sharpe {ratio(roll_audit["adjusted_Sharpe"])}；正式策略為{money(roll_audit["raw_net_pnl"])}元、{ratio(roll_audit["raw_Sharpe"])}。此項診斷只變更訊號，實際成交仍按原契約。')
-text(f'價格單獨策略按完整樣本事後配平至相同年波動的TX-equivalent為{price_vm.position_equivalent:.3f}，淨利{money(price_vm.net_pnl)}元、Sharpe {ratio(price_vm.Sharpe)}；策略為{money(ms.net_pnl)}元、{ratio(ms.Sharpe)}。這是風險尺度與曝險差異的描述，配平小數口不能直接交易，亦非樣本外證據。')
+text(f'交易強度衡量三大法人的當日淨成交流量，而非未平倉部位；以多空總口數為分母可降低活躍度差異的影響，但三類法人交易同時含方向投資、避險、套利與造市，公開彙總資料無法識別動機。[2] 策略採多單／空手架構，績效同時受長期多頭趨勢與隔夜報酬影響，bootstrap區間與基準重疊，不能歸因於法人資訊優勢。固定一口基準MDD {pct(mb.MDD_pct)}高於策略{pct(ms.MDD_pct)}，但其年化波動{pct(mb.annual_volatility)}亦遠高於{pct(ms.annual_volatility)}；縮放至約{rm["scale"]:.3f}口的配平基準Sharpe {ratio(rm["Sharpe"])}、MDD {pct(rm["MDD_pct"])}，只控制風險尺度，小數口不可直接交易。')
+text(f'資料口徑敏感度：兩份法人來源比對{source_audit["compared_rows"]:,}筆僅{source_audit["differing_rows"]}筆不同（2026/07/06），{source_audit["changed_signal_days"]}天訊號改變，但歷史初次發布快照未留存，資料時點未獨立驗證。近月未調整均線以前一日重疊價差調整後{roll_audit["changed_signal_days"]}天訊號不同，Sharpe由{ratio(roll_audit["raw_Sharpe"])}降至{ratio(roll_audit["adjusted_Sharpe"])}，是最敏感的口徑；價格單獨策略配平至同波動後Sharpe {ratio(price_vm.Sharpe)}低於策略，但屬全樣本事後配平。')
 sub('二、盤整與快速反轉環境')
-text('在盤整、急漲急跌或V形反轉環境中，20日平均具有滯後性，價格亦可能在MA20附近反覆穿越。當條件短暫失效後退出、再度成立後重新進場，可能造成追價、較低價格退出或錯失快速反彈。雙條件一致仍可能漏接行情或反覆進出。')
-text('本回測未加入事後最佳化的固定點數停損。現有資料僅含日盤OHLC，缺乏完整夜盤價格路徑、委託排隊及極端行情成交資訊，因此若加入盤中觸價停損，將引入無法可靠驗證的成交假設。策略僅依訊號消退、轉倉與期末清算執行出場。')
+text('盤整或V形反轉時20日平均滯後、價格在MA20附近反覆穿越，條件短暫失效後退出再進場，造成追價、較差價格退出或錯失反彈。本回測未加入事後最佳化的固定點數停損：資料僅含日盤OHLC，缺乏夜盤路徑與極端行情成交資訊，盤中觸價停損會引入無法驗證的成交假設；出場只依訊號消退、轉倉與期末清算。')
 sub('三、隔夜跳空與流動性風險')
-text('本策略實際持有隔夜部位，因此海外市場、匯率與突發事件可能在臺指期日盤重新開市前改變價格。即使隔日日盤開盤已產生退出需求，仍須承受前一日收盤至下一交易日開盤的跳空風險；若開盤流動性不足，實際成交損失亦可能高於固定2點滑價假設。')
 rebound=ew.dropna(subset=['near_month_move_gap_close_to_reentry_open_pct']);top_rebound=rebound.loc[rebound.near_month_move_gap_close_to_reentry_open_pct.idxmax()]
-text(f'特殊期間表顯示策略在{len(ew)}個急跌視窗中有{flat_on_gap}個於最深跳空日為空手，這來自雙條件在下跌初期即退出，而非對事件的預測；代價是反彈初期缺席：從最深跳空日到重新進場，中位數需{rebound.trading_days_to_reentry.median():.0f}個交易日，期間近月平均已回升{rebound.near_month_move_gap_close_to_reentry_open_pct.mean()*100:.1f}%，{top_rebound.event}更達{top_rebound.near_month_move_gap_close_to_reentry_open_pct*100:.1f}%。樣本內三個最差單日為{worst_text}，均發生在快速反轉時的進場或持倉日，跳空風險集中於重新進場後而非持倉中段。因此{pct(ms.MDD_pct)}的日末MDD不應解讀為單筆交易或盤中可能遭受的最大損失；共同起始資金並未重建歷史保證金與追繳，評估實際可行性仍需納入夜盤價格、盤中極端波動、開盤成交品質與逐日保證金需求。')
-page();title('陸、結論與後續驗證')
-sub('一、績效結論')
-text(f'以{money(reference_capital)}元建立兩條權益曲線，逐日累加淨損益後，策略Sharpe為{ratio(ms.Sharpe)}、Calmar為{ratio(ms.Calmar)}，固定一口Buy-and-Hold為{ratio(mb.Sharpe)}與{ratio(mb.Calmar)}；策略MDD為{pct(ms.MDD_pct)}，基準為{pct(mb.MDD_pct)}。策略累積報酬{pct(ms.cumulative_return)}低於基準{pct(mb.cumulative_return)}。固定一口比較仍有持倉時間差異：策略持倉日約為基準三分之一。')
-text(f'將 benchmark 事後縮放至與策略相同的{pct(ms.annual_volatility)}年化波動後，配平 benchmark 的Sharpe為{ratio(rm["Sharpe"])}、MDD為{pct(rm["MDD_pct"])}、Calmar為{ratio(rm["Calmar"])}；策略分別為{ratio(ms.Sharpe)}、{pct(ms.MDD_pct)}與{ratio(ms.Calmar)}。策略在同風險尺度下仍較佳，但配平係數使用完整樣本且為小數口，只是診斷，不是可部署的交易基準。')
-text('策略最長回撤期間為482個交易日，高於基準的366日，顯示較低回撤幅度不等同於較短的資金恢復時間。勝率約51.70%、Profit Factor約2.197，績效並非依賴高勝率，而較依賴部分趨勢延續期間的較大獲利；前五筆交易與近兩年績效占比較高，亦顯示成果存在集中性。')
-text(f'加權指數價格報酬為{pct(mi.cumulative_return)}、MDD {pct(mi.MDD_pct)}，但未含股息或追蹤成本，僅作市場參考。')
-sub('二、樣本選擇偏誤與驗證要求')
-text(f'本策略由{candidate_count}個候選規則比較後選出，並非在完全未觀察資料的情況下事先固定。因此，即使滑價敏感度與時間分組結果仍為正，也不能視為獨立樣本外證據。目前的Sharpe可能包含策略挑選造成的選擇偏誤，應在解讀績效時明確納入。')
-text('後續驗證應先凍結20日交易強度、20日價格均線、零門檻及成本假設，再以未參與策略設計的新資料進行樣本外檢驗。若進一步測試結算日排除、均線參數或停損規則，應事前限定假說與參數範圍，並完整報告所有結果，以降低多重嘗試造成的偏誤。')
-text('綜合而言，策略規則可追溯且歷史成本後報酬為正，但同期大盤與TX買進持有累積報酬均較高；策略持倉較少且回撤較低，未能據此認定法人訊號創造穩定超額報酬。仍須完成獨立樣本外驗證、夜盤與盤中風險及資料發布時點檢查。')
-sub('三、資料來源與計算口徑')
-text('[1] 臺灣期貨交易所，臺股期貨契約規格：https://www.taifex.com.tw/cht/2/tX\n[2] 臺灣期貨交易所，三大法人交易資訊：https://www.taifex.com.tw/cht/3/futContractsDateView\n[3] 臺灣期貨交易所，費率表：https://www.taifex.com.tw/cht/4/feeSchedules\n歷史行情：https://www.taifex.com.tw/cht/3/dlFutDailyMarketView\nFinMind：https://finmind.github.io/tutor/TaiwanMarket/Derivative/\n加權指數：臺灣證券交易所每日市場成交資訊與發行量加權股價指數歷史資料，來源與雜湊見source_audits/taiex_sources.json。','small')
-text('Sharpe＝日報酬平均／日報酬樣本標準差×√252；Calmar＝CAGR／最大回撤比例。權益曲線以首日一口TX開盤名目價值起算，逐日累加淨損益，MDD取曲線相對歷史高點的最大跌幅；風險配平 benchmark 僅作同風險尺度診斷。','small')
+text(f'策略持有隔夜部位，海外市場與突發事件可能在日盤重新開市前改變價格，開盤流動性不足時損失可能高於固定2點滑價。特殊期間表中{len(ew)}個急跌視窗有{flat_on_gap}個於最深跳空日為空手，這來自雙條件在下跌初期即退出，而非預測；代價是從最深跳空日到重新進場中位數需{rebound.trading_days_to_reentry.median():.0f}個交易日，期間近月平均已回升{rebound.near_month_move_gap_close_to_reentry_open_pct.mean()*100:.1f}%、最高{top_rebound.near_month_move_gap_close_to_reentry_open_pct*100:.1f}%。樣本內三個最差單日為{worst_text}，均為快速反轉時的進場或持倉日，跳空風險集中於重新進場後；日末MDD不等於盤中最大損失，且未重建歷史保證金與追繳。')
+title('陸、結論與後續驗證')
+text(f'績效結論：以{money(reference_capital)}元起算，策略Sharpe {ratio(ms.Sharpe)}、Calmar {ratio(ms.Calmar)}、MDD {pct(ms.MDD_pct)}，固定一口Buy-and-Hold為{ratio(mb.Sharpe)}、{ratio(mb.Calmar)}、{pct(mb.MDD_pct)}；但策略累積報酬{pct(ms.cumulative_return)}低於基準{pct(mb.cumulative_return)}與加權指數{pct(mi.cumulative_return)}，最長回撤{int(ms.longest_drawdown_trading_days)}日長於基準{int(mb.longest_drawdown_trading_days)}日；配平基準Sharpe {ratio(rm["Sharpe"])}低於策略，{"但bootstrap 95%區間重疊，統計上無法區分" if ci_overlap else "且bootstrap 95%區間不重疊"}。證據強度：{rob["grid"]["grid_size"]}組參數中{pct(rob["grid"]["share_Sharpe_above_1"])}的Sharpe高於1，{len(scen)}個替代執行與成本情境的Sharpe介於{ratio(scen.Sharpe.min())}至{ratio(scen.Sharpe.max())}，法人條件在趨勢濾網之上的次日報酬增量{rob["signal"]["flow_increment_given_trend_bp"]:+.1f} bp（t={rob["signal"]["welch_t_flow_given_trend"]:.2f}）；但策略由{candidate_count}個候選比較後選出，所有檢驗皆為全樣本事後診斷，Sharpe含選擇偏誤。')
+text('最終判斷：規則可追溯、成本後報酬為正且對設定不敏感，但未證明法人訊號創造穩定超額報酬；在完成至少252個未參與設計的新交易日前瞻驗證（規則、參數與成本已於prospective_protocol.json凍結）之前，結論為「有條件通過：僅作研究假說，不建議部署」。')
+text('資料來源與口徑：期交所 www.taifex.com.tw [1] 契約規格 cht/2/tX、[2] 三大法人 cht/3/futContractsDateView、[3] 費率表 cht/4/feeSchedules、歷史行情 cht/3/dlFutDailyMarketView；FinMind finmind.github.io/tutor/TaiwanMarket/Derivative/；加權指數：證交所每日市場成交資訊，雜湊見source_audits/taiex_sources.json。Sharpe＝日報酬平均／樣本標準差×√252；Sortino以下方半變異；Calmar＝CAGR／MDD；VaR／ES為日淨報酬歷史5%分位與其條件平均；bootstrap為20日循環區塊重抽5,000次。','small')
 pages.append(current.copy())
 cmap=FontToolsFont(B/'chinese_font.ttf').getBestCmap();missing=sorted(set(ch for t in texts for ch in t if not ch.isspace() and ord(ch) not in cmap))
 assert not missing,missing
@@ -275,7 +299,7 @@ dictionary=[('signal_date','昨日盤後訊號日期'),('institution_net_trade_q
 for row in dictionary:ws.append(row)
 ws.column_dimensions['A'].width=46;ws.column_dimensions['B'].width=66;ws.freeze_panes='A2'
 ws=w.create_sheet('資金回撤疊圖');ws['A1']=f'同期間、固定一口／空手；共同起始資金為首日一口TX開盤名目價值{reference_capital:,.0f}元。'
-for name,cell in [('indicator_timeseries.png','A3'),('equity_comparison.png','A31'),('equity_comparison_log.png','A59'),('underwater_comparison.png','A87')]:
+for name,cell in [('indicator_timeseries.png','A3'),('equity_comparison.png','A31'),('equity_comparison_log.png','A59'),('underwater_comparison.png','A87'),('parameter_grid.png','A115')]:
     im=ExcelImage(O/name);im.width=940;im.height=374;ws.add_image(im,cell)
 buf=io.BytesIO();w.save(buf);payload=buf.getvalue()
 with zipfile.ZipFile(io.BytesIO(payload)) as z:assert z.testzip() is None

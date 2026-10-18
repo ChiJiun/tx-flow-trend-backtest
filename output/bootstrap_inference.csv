@@ -1,0 +1,4 @@
+﻿series,days,Sharpe,Sharpe_ci_low,Sharpe_ci_high,prob_Sharpe_le_0,annual_mean_return,annual_mean_ci_low,annual_mean_ci_high,t_stat_mean_daily_return,n_boot,block_length,method
+strategy,1968,1.3674407230136716,0.6348991838011687,2.0880443681701912,0.0002,0.12090453424434855,0.054040121548688314,0.19376799405761175,3.8213849239498114,5000,20,circular block bootstrap of daily net returns; rf=0; not adjusted for prior candidate selection
+benchmark,1968,1.1469113264079502,0.4564403388463628,1.9133536479507152,0.0004,0.21820544001591888,0.09236666146437134,0.34148406250171565,3.205103942044005,5000,20,circular block bootstrap of daily net returns; rf=0; not adjusted for prior candidate selection
+price_only,1968,1.118129277857895,0.4104637411865662,1.8773847940679302,0.0016,0.15907111595710266,0.05852633204195189,0.2627561982986656,3.124670995621893,5000,20,circular block bootstrap of daily net returns; rf=0; not adjusted for prior candidate selection

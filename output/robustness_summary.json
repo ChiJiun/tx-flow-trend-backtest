@@ -1,0 +1,47 @@
+{
+  "grid": {
+    "base_Sharpe": 1.3674407230136694,
+    "base_rank_by_Sharpe": 8,
+    "grid_size": 36,
+    "grid_Sharpe_median": 1.1888694461053513,
+    "grid_Sharpe_min": 0.8736482381589051,
+    "grid_Sharpe_max": 1.668236020017092,
+    "share_Sharpe_above_1": 0.8611111111111112,
+    "share_positive_net_pnl": 1.0,
+    "neighbourhood_15_30_Sharpe_median": 1.2196308535704576,
+    "neighbourhood_15_30_Sharpe_min": 0.8930884422385258,
+    "spearman_first_vs_second_half": 0.19768339768339768,
+    "best_first_half_params": "60/20",
+    "best_first_half_Sharpe_second_half": 1.6677029780091848,
+    "base_Sharpe_first_half": 1.2243464570017564,
+    "base_Sharpe_second_half": 1.5180371073066976,
+    "note": "full-sample grid is descriptive; the 20/20 rule was chosen before this grid but after comparing 18 candidates"
+  },
+  "signal": {
+    "welch_t_flow_given_trend": 1.9204349290845715,
+    "flow_increment_given_trend_bp": 11.815580165385642
+  },
+  "bootstrap": {
+    "strategy": {
+      "Sharpe": 1.3674407230136716,
+      "Sharpe_ci_low": 0.6348991838011687,
+      "Sharpe_ci_high": 2.0880443681701912,
+      "prob_Sharpe_le_0": 0.0002,
+      "t_stat_mean_daily_return": 3.8213849239498114
+    },
+    "benchmark": {
+      "Sharpe": 1.1469113264079502,
+      "Sharpe_ci_low": 0.4564403388463628,
+      "Sharpe_ci_high": 1.9133536479507152,
+      "prob_Sharpe_le_0": 0.0004,
+      "t_stat_mean_daily_return": 3.205103942044005
+    },
+    "price_only": {
+      "Sharpe": 1.118129277857895,
+      "Sharpe_ci_low": 0.4104637411865662,
+      "Sharpe_ci_high": 1.8773847940679302,
+      "prob_Sharpe_le_0": 0.0016,
+      "t_stat_mean_daily_return": 3.124670995621893
+    }
+  }
+}

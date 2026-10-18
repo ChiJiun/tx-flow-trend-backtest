@@ -23,6 +23,13 @@ required = [
     OUT / "underwater_comparison.png",
     OUT / "indicator_timeseries.png",
     OUT / "event_windows.csv",
+    OUT / "parameter_grid.png",
+    OUT / "parameter_grid.csv",
+    OUT / "robustness_scenarios.csv",
+    OUT / "bootstrap_inference.csv",
+    OUT / "signal_quantile_returns.csv",
+    OUT / "monthly_returns.csv",
+    OUT / "robustness_summary.json",
 ]
 missing = [str(p.relative_to(BASE)) for p in required if not p.is_file() or p.stat().st_size == 0]
 assert not missing, f"missing or empty required outputs: {missing}"
@@ -33,8 +40,9 @@ for path in [BASE / "TX_flow_trend_workbook.xlsx", BASE / "TX_flow_trend_report.
 
 wb = load_workbook(BASE / "TX_flow_trend_workbook.xlsx", read_only=True)
 expected_sheets = {"資金回撤疊圖"}
-assert len(wb.sheetnames) == 21, f"unexpected workbook sheet count: {len(wb.sheetnames)}"
-assert {"法人濾網增量歸因", "價格單獨波動配平", "同曝險大盤比較摘要", "同曝險大盤比較逐日", "特殊期間_事後描述"}.issubset(wb.sheetnames)
+assert len(wb.sheetnames) == 26, f"unexpected workbook sheet count: {len(wb.sheetnames)}"
+assert {"法人濾網增量歸因", "價格單獨波動配平", "同曝險大盤比較摘要", "同曝險大盤比較逐日", "特殊期間_事後描述",
+        "月報酬", "穩健性情境", "參數格點", "統計推論_bootstrap", "訊號分位次日報酬"}.issubset(wb.sheetnames)
 assert expected_sheets.issubset(wb.sheetnames), f"missing workbook sheets: {expected_sheets - set(wb.sheetnames)}"
 
 doc = Document(BASE / "TX_flow_trend_report.docx")
@@ -43,7 +51,7 @@ assert "風險配平比較（僅列於表格）" in doc_text, "DOCX missing risk
 assert "0.293口" in doc_text and "13.67%" in doc_text, "DOCX risk-matched values differ from standard"
 assert "等曝險代表路徑" not in doc_text, "DOCX retains removed comparison"
 # 作業規格：書面報告需含 壹 資料介紹 ～ 伍 策略極限與檢討，且 PDF 限 6～8 頁。
-for heading in ["壹、資料介紹", "貳、策略假設與訊號建構", "參、回測設定與摩擦成本", "肆、績效分析", "伍、策略極限與檢討", "特殊期間"]:
+for heading in ["壹、資料介紹", "貳、策略假設與訊號建構", "參、回測設定與摩擦成本", "肆、績效分析", "伍、策略極限與檢討", "陸、結論", "特殊期間", "參數穩健性", "bootstrap"]:
     assert heading in doc_text, f"DOCX missing required section: {heading}"
 
 pdf_bytes = (BASE / "TX_flow_trend_report.pdf").read_bytes()
@@ -51,7 +59,7 @@ assert pdf_bytes[:5] == b"%PDF-", "report PDF signature invalid"
 import re
 pdf_pages = len(re.findall(rb"/Type\s*/Page(?![s/])", pdf_bytes))
 assert 6 <= pdf_pages <= 8, f"report PDF must be 6-8 pages, found {pdf_pages}"
-for path in [OUT / "equity_comparison.png", OUT / "equity_comparison_log.png", OUT / "underwater_comparison.png", OUT / "indicator_timeseries.png"]:
+for path in [OUT / "equity_comparison.png", OUT / "equity_comparison_log.png", OUT / "underwater_comparison.png", OUT / "indicator_timeseries.png", OUT / "parameter_grid.png"]:
     assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", f"PNG signature invalid: {path.name}"
 
 validation = json.loads((OUT / "validation.json").read_text(encoding="utf-8"))
@@ -101,6 +109,19 @@ for row in events.itertuples():
     assert len(window) == row.trading_days
     assert np.isclose(window.pnl.sum(), row.strategy_net_pnl, atol=1e-6)
     assert int(window.loc[row.worst_open_gap_date, "position_before"]) == row.held_on_worst_gap_day
+# 穩健性產物與主結果的一致性：格點 20/20、基準情境、bootstrap 點估計都必須等於正式策略。
+grid = pd.read_csv(OUT / "parameter_grid.csv").set_index(["intensity_window", "price_window"])
+assert len(grid) == 36 and np.isclose(grid.loc[(20, 20), "net_pnl"], strategy["net_pnl"], atol=1e-6)
+assert np.isclose(grid.loc[(20, 20), "Sharpe"], strategy["Sharpe"], atol=1e-12)
+scenarios = pd.read_csv(OUT / "robustness_scenarios.csv")
+assert len(scenarios) >= 6 and np.isclose(scenarios.iloc[0]["net_pnl"], strategy["net_pnl"], atol=1e-6)
+assert (scenarios.trades > 0).all() and scenarios.scenario.is_unique
+boot = pd.read_csv(OUT / "bootstrap_inference.csv").set_index("series")
+assert np.isclose(boot.loc["strategy", "Sharpe"], strategy["Sharpe"], atol=1e-9)
+assert (boot.Sharpe_ci_low <= boot.Sharpe).all() and (boot.Sharpe <= boot.Sharpe_ci_high).all()
+signal = pd.read_csv(OUT / "signal_quantile_returns.csv")
+assert signal.days.sum() == 3 * int(signal.loc[signal.group == "全部訊號日", "days"].iloc[0])  # 五分位、2×2 條件、全部各一輪
+assert {"Sortino", "daily_VaR95", "daily_ES95"}.issubset(metrics.columns) and metrics.daily_ES95.ge(metrics.daily_VaR95).all()
 market = pd.read_csv(OUT / 'market_normalized_summary.csv')
 assert len(market) == 3
 assert market.reference_capital.nunique() == 1
